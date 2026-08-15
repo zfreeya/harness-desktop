@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Harness 设计文档</title>
+<style>
+:root{
+  --ink:#111111; --ink-muted:#6B6B6B; --ink-subtle:#9B9B9B; --ink-faint:#C2C2C2;
+  --canvas:#FAFAF9; --surface-1:#FFFFFF; --surface-2:#F5F5F4;
+  --hairline:#EAEAEA; --primary:#1F6C9F; --primary-soft:#E1F3FE;
+  --success-soft:#EDF3EC; --success-strong:#346538;
+  --warning-soft:#FBF3DB; --warning-strong:#956400;
+  --error-soft:#FDEBEC; --error-strong:#9F2F2D;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",system-ui,"PingFang SC",sans-serif;background:var(--canvas);color:var(--ink);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{display:flex;min-height:100vh}
+.side{width:200px;flex:none;border-right:1px solid var(--hairline);padding:18px 12px;background:var(--surface-1)}
+.side .t{font-weight:700;font-size:13px;margin-bottom:14px}
+.side a{display:block;font-size:12.5px;color:var(--ink-muted);text-decoration:none;padding:5px 8px;border-radius:6px}
+.side a:hover{background:var(--surface-2);color:var(--ink)}
+.side a.on{background:var(--primary-soft);color:var(--primary);font-weight:500}
+.main{flex:1;padding:28px 36px;max-width:760px}
+.main h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
+.main .sub{font-size:13px;color:var(--ink-muted);margin-bottom:26px}
+.main h2{font-size:15px;font-weight:600;margin:26px 0 10px}
+.main p{font-size:13px;color:var(--ink-muted);max-width:62ch}
+.sw{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.sw div{width:110px;border:1px solid var(--hairline);border-radius:8px;overflow:hidden;background:var(--surface-1)}
+.sw .chip{height:34px}
+.sw span{display:block;font-size:11px;font-family:"SF Mono",ui-monospace,Menlo,monospace;padding:5px 8px;color:var(--ink-muted)}
+.sw b{display:block;font-size:11px;padding:0 8px 6px;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:12px 0}
+td{padding:8px 10px;border-top:1px solid var(--hairline)}
+tr:first-child td{border-top:none}
+td:first-child{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--ink-muted);width:150px}
+.badge{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.5px;border-radius:9999px;padding:2px 8px;margin-right:6px}
+.b-blue{background:var(--primary-soft);color:var(--primary)}
+.b-green{background:var(--success-soft);color:var(--success-strong)}
+.b-yellow{background:var(--warning-soft);color:var(--warning-strong)}
+.b-red{background:var(--error-soft);color:var(--error-strong)}
+code{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:4px;padding:1px 5px}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;color:var(--ink-faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside class="side">
+    <div class="t">DESIGN.md</div>
+    <a href="#" class="on">色彩</a>
+    <a href="#">排版</a>
+    <a href="#">布局</a>
+    <a href="#">组件</a>
+    <a href="#">AI-Tells 禁令</a>
+  </aside>
+  <main class="main">
+    <h1>色彩</h1>
+    <p class="sub">Premium Utilitarian Minimalism，暖单色 + 单一墨蓝强调</p>
+    <h2>墨阶</h2>
+    <div class="sw">
+      <div><div class="chip" style="background:#111111"></div><b>Ink</b><span>#111111</span></div>
+      <div><div class="chip" style="background:#6B6B6B"></div><b>Muted</b><span>#6B6B6B</span></div>
+      <div><div class="chip" style="background:#9B9B9B"></div><b>Subtle</b><span>#9B9B9B</span></div>
+      <div><div class="chip" style="background:#C2C2C2"></div><b>Faint</b><span>#C2C2C2</span></div>
+    </div>
+    <h2>画布与发丝</h2>
+    <div class="sw">
+      <div><div class="chip" style="background:#FAFAF9;border-bottom:1px solid #EAEAEA"></div><b>Canvas</b><span>#FAFAF9</span></div>
+      <div><div class="chip" style="background:#FFFFFF;border-bottom:1px solid #EAEAEA"></div><b>Surface</b><span>#FFFFFF</span></div>
+      <div><div class="chip" style="background:#EAEAEA"></div><b>Hairline</b><span>#EAEAEA</span></div>
+    </div>
+    <h2>强调与语义徽章</h2>
+    <table>
+      <tr><td>primary</td><td><span class="badge b-blue">进行中</span> #1F6C9F on #E1F3FE</td></tr>
+      <tr><td>success</td><td><span class="badge b-green">已完成</span> #346538 on #EDF3EC</td></tr>
+      <tr><td>warning</td><td><span class="badge b-yellow">待批准</span> #956400 on #FBF3DB</td></tr>
+      <tr><td>error</td><td><span class="badge b-red">失败</span> #9F2F2D on #FDEBEC</td></tr>
+    </table>
+    <h2>形状纪律</h2>
+    <p>按钮 <code>6px</code>、卡片 <code>8px</code>、浮层 <code>12px</code>、徽章全圆。胶囊只属于徽章，不做胶囊按钮。</p>
+    <p class="mono" style="margin-top:30px" id="buildTime">上次构建 --:--:--</p>
+  </main>
+</div>
+<script>
+document.getElementById('buildTime').textContent = '上次构建 ' + new Date().toTimeString().slice(0,8);
+</script>
+</body>
+</html>

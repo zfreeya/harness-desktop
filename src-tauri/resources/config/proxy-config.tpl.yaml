@@ -1,0 +1,99 @@
+server:
+  host: 127.0.0.1
+  port: 8096
+  forwardTimeoutMs: 600000
+
+upstream:
+  url: https://api.deepseek.com/v1
+  apiKey: "__DS_KEY__"
+  agents: {}
+
+log:
+  file: "__HOME__/Library/Application Support/dev.harness.desktop/logs"
+  verbose: false
+  level: info
+  backend: console
+
+redis:
+  enabled: false
+  host: "127.0.0.1"
+  port: 6379
+
+rateLimit:
+  tpm: 1000000
+  qpm: 1000
+
+storage:
+  enabled: false
+  backend: sqlite
+  ttlDays: 7
+  sqlite:
+    dbPath: "__HOME__/Library/Application Support/dev.harness.desktop/proxy-storage.db"
+
+opik:
+  enabled: false
+langfuse:
+  enabled: false
+clickhouse:
+  enabled: false
+
+auth:
+  enabled: false
+  url: "http://127.0.0.1:8420"
+  timeoutMs: 5000
+
+admin:
+  apiKey: ""
+
+systemUsers: []
+
+creditReport:
+  url: ""
+creditPricing:
+  models:
+    - name: "deepseek-chat"
+      modelName: "deepseek-chat"
+      input: 0.45
+      output: 0.90
+      cacheRead: 0.0038
+    - name: "deepseek-v4-pro"
+      modelName: "deepseek-v4-pro"
+      input: 0.45
+      output: 0.90
+      cacheRead: 0.0038
+    - name: "deepseek-v4-flash"
+      modelName: "deepseek-v4-flash"
+      input: 0.15
+      output: 0.30
+      cacheRead: 0.003
+
+injection:
+  enabled: true
+  injectors: ["skill", "tdai-memory"]
+  externalGatewayUrl: "http://127.0.0.1:8096"
+
+extraction:
+  enabled: true
+  extractors: ["skill", "tdai-memory"]
+
+sessionInit:
+  enabled: false
+  maxRetries: 3
+  injectAgentContext: true
+  injectTaskContext: true
+  headerAutoSelect:
+    enabled: true
+    teamHeader: "x-team-id"
+    agentHeader: "x-agent-id"
+    taskHeader: "x-task-id"
+    onMismatch: "form"
+
+tdai:
+  enabled: true
+  endpoint: "http://127.0.0.1:8420"
+  apiKey: "local"
+  serviceId: "default"
+  memory:
+    enabled: true
+    inject: true
+    writeL0: true

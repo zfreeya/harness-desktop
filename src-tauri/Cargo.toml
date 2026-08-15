@@ -1,0 +1,19 @@
+[package]
+name = "harness-desktop"
+version = "0.1.0"
+description = "DeepSeek Harness Desktop - 对话式桌面 Agent"
+authors = ["harness"]
+edition = "2021"
+
+[lib]
+name = "harness_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-opener = "2"

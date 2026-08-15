@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DeepSeek Harness - 官网</title>
+<style>
+:root{
+  --ink:#111111; --ink-muted:#6B6B6B; --ink-subtle:#9B9B9B;
+  --canvas:#FAFAF9; --surface-1:#FFFFFF; --surface-2:#F5F5F4;
+  --hairline:#EAEAEA; --primary:#1F6C9F; --primary-soft:#E1F3FE;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",system-ui,"PingFang SC",sans-serif;background:var(--canvas);color:var(--ink);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.nav{display:flex;align-items:center;gap:28px;padding:16px 40px;border-bottom:1px solid var(--hairline);background:var(--surface-1)}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:-.2px}
+.logo .m{width:26px;height:26px;border-radius:7px;background:var(--ink);display:flex;align-items:center;justify-content:center}
+.logo .m svg{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.nav a{font-size:13px;color:var(--ink-muted);text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.nav .sp{flex:1}
+.cta{background:var(--ink);color:#fff;font-size:13px;font-weight:500;border:none;border-radius:6px;padding:7px 16px;cursor:pointer}
+.cta:hover{background:#2A2A2A}
+.hero{padding:88px 40px 72px;max-width:1080px;margin:0 auto}
+.hero .tag{font-size:11px;font-weight:600;letter-spacing:1px;color:var(--primary);margin-bottom:18px}
+.hero h1{font-size:44px;font-weight:700;letter-spacing:-.8px;line-height:1.15;max-width:16ch;margin-bottom:18px}
+.hero p{font-size:16px;color:var(--ink-muted);max-width:52ch;margin-bottom:32px}
+.hero .cta{font-size:14px;padding:9px 22px}
+.feat{display:grid;grid-template-columns:1.4fr 1fr 1fr;grid-auto-rows:120px;gap:12px;max-width:1080px;margin:0 auto;padding:0 40px}
+.c{border:1px solid var(--hairline);border-radius:8px;padding:18px;background:var(--surface-1);display:flex;flex-direction:column;justify-content:space-between}
+.c .t{font-size:13px;font-weight:600}
+.c .d{font-size:12px;color:var(--ink-muted)}
+.c.big{grid-column:span 2;grid-row:span 2}
+.c.big .t{font-size:19px;font-weight:700;letter-spacing:-.2px}
+.c.tint{background:var(--primary-soft);border-color:transparent}
+.c.tint .t,.c.tint .d{color:var(--primary)}
+.c.mono{background:var(--surface-2);font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;color:var(--ink-muted);justify-content:flex-start;gap:4px}
+.foot{border-top:1px solid var(--hairline);margin-top:64px;padding:22px 40px;display:flex;align-items:center;gap:16px;font-size:12px;color:var(--ink-subtle);background:var(--surface-1)}
+.foot .mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="logo"><span class="m"><svg viewBox="0 0 24 24"><path d="M4 18V6l16 12V6"/></svg></span>DeepSeek Harness</div>
+  <a href="#">功能</a><a href="#">文档</a><a href="#">价格</a>
+  <div class="sp"></div>
+  <button class="cta">开始使用</button>
+</nav>
+<section class="hero">
+  <div class="tag">TASK-DRIVEN AGENT WORKBENCH</div>
+  <h1>任务交给 Agent，你只做决定</h1>
+  <p>把 TODO 看板和桌面 coding agent 合二为一。维护任务、批准关键节点，每一步都有日志留痕。</p>
+  <button class="cta">开始使用</button>
+</section>
+<section class="feat">
+  <div class="c big">
+    <div class="t">一张看板，从待办到完成</div>
+    <div class="d">任务卡跨列拖拽，交给 Agent 后自动进入执行流，完成后自动归档。</div>
+  </div>
+  <div class="c tint">
+    <div class="t">Agent 执行</div>
+    <div class="d">分步执行，关键动作请求你批准</div>
+  </div>
+  <div class="c mono">
+    <span>$ harness run T-2001</span>
+    <span>steps 2/5, 执行中</span>
+  </div>
+  <div class="c">
+    <div class="t">本地优先</div>
+    <div class="d">任务与日志留在本机</div>
+  </div>
+  <div class="c">
+    <div class="t">键盘优先</div>
+    <div class="d">⌘K 命令面板</div>
+  </div>
+</section>
+<footer class="foot">
+  <span>DeepSeek Harness</span>
+  <span>设计规范 DESIGN.md</span>
+  <div style="flex:1"></div>
+  <span class="mono" id="buildTime">上次构建 --:--:--</span>
+</footer>
+<script>
+document.getElementById('buildTime').textContent = '上次构建 ' + new Date().toTimeString().slice(0,8);
+</script>
+</body>
+</html>
