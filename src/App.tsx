@@ -16,7 +16,7 @@ async function winAction(action: "close" | "minimize" | "maximize") {
 /* ================= 图标 ================= */
 const Ic = {
   mark: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 18V6l16 12V6" /></svg>
+    <img src="/icon.png" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} />
   ),
   spark: (
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 2.4 3.3-.5.5 3.3L21 9.6l-1.8 2.8 1.8 2.8-2.8 1.8-.5 3.3-3.3-.5L12 22l-2.4-2.4-3.3.5-.5-3.3L3 15.2l1.8-2.8L3 9.6l2.8-1.8.5-3.3 3.3.5z" /><circle cx="12" cy="11" r="3.2" fill="#fff" /></svg>
@@ -150,22 +150,25 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
     return <div className="msg user"><div className="bubble">{m.chip ?? m.text}</div></div>;
   }
   if (m.kind === "ask") {
+    const opts = m.opts ?? [];
     return (
       <div className="msg agent">
         <AgentHead />
         <div className="text">{m.text}</div>
-        <div className="chips">
-          {m.opts!.map((o, i) => (
-            <button
-              key={i}
-              className={`chip${m.picked === i ? " picked" : ""}${m.picked !== undefined && m.picked !== i ? " gone" : ""}`}
-              disabled={m.picked !== undefined}
-              onClick={() => h.pickChip(mi, i)}
-            >
-              {o}
-            </button>
-          ))}
-        </div>
+        {opts.length > 0 && (
+          <div className="chips">
+            {opts.map((o, i) => (
+              <button
+                key={i}
+                className={`chip${m.picked === i ? " picked" : ""}${m.picked !== undefined && m.picked !== i ? " gone" : ""}`}
+                disabled={m.picked !== undefined}
+                onClick={() => h.pickChip(mi, i)}
+              >
+                {o}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -176,40 +179,31 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
         <div className="text">{m.text}</div>
         <div className="mem-block">
           <div className="mem-label">来自记忆 · L1/L2 召回</div>
-          {m.atoms!.map((a, i) => (
+          {(m.atoms ?? []).map((a, i) => (
             <div className="mem-atom" key={i}>{a}</div>
-          ))}
-        </div>
-        <div className="chips">
-          {m.opts!.map((o, i) => (
-            <button
-              key={i}
-              className={`chip${m.picked === i ? " picked" : ""}${m.picked !== undefined && m.picked !== i ? " gone" : ""}`}
-              disabled={m.picked !== undefined}
-              onClick={() => h.pickChip(mi, i)}
-            >
-              {o}
-            </button>
           ))}
         </div>
       </div>
     );
   }
   if (m.kind === "plan") {
+    const items = m.items ?? [];
     return (
       <div className="msg agent">
         <AgentHead />
         <div className="text">{m.text}</div>
-        <div className="plan-card">
-          <div className="pt">计划</div>
-          {m.items!.map((it, i) => (
-            <div className="pi" key={i}><b>{i + 1}</b><span>{it}</span></div>
-          ))}
-          <div className="pa">
-            <button className="btn btn-primary btn-sm" onClick={h.confirmPlan}>开始执行</button>
-            <button className="btn btn-ghost btn-sm" onClick={h.reconsiderPlan}>改一改</button>
+        {items.length > 0 && (
+          <div className="plan-card">
+            <div className="pt">计划</div>
+            {items.map((it, i) => (
+              <div className="pi" key={i}><b>{i + 1}</b><span>{it}</span></div>
+            ))}
+            <div className="pa">
+              <button className="btn btn-primary btn-sm" onClick={h.confirmPlan}>开始执行</button>
+              <button className="btn btn-ghost btn-sm" onClick={h.reconsiderPlan}>改一改</button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
@@ -252,6 +246,7 @@ function ChatView({ h }: { h: Harness }) {
         <div className="input-row">
           <button className="tool-btn" title="附件" onClick={() => h.push("info", "附件", "将打开文件选择器")}>{Ic.clip}</button>
           <textarea
+            id="chatInput"
             rows={1}
             placeholder="描述你想做的事，模糊也没关系…"
             value={text}
@@ -282,7 +277,7 @@ function PreviewPane({ h }: { h: Harness }) {
     btn.classList.remove("reload-spin"); void (btn as HTMLElement).offsetWidth; btn.classList.add("reload-spin");
   };
   return (
-    <aside className={`preview-pane${h.previewOpen ? " open" : ""}`}>
+    <aside id="previewPane" className={`preview-pane${h.previewOpen ? " open" : ""}`}>
       <div className="pv-inner">
         <div className="pv-head">
           <span className="t">预览</span>
@@ -304,7 +299,7 @@ function PreviewPane({ h }: { h: Harness }) {
               <button className="abtn" id="reloadBtn" onClick={() => { spin(); h.reloadPreview(); }} title="刷新">{Ic.reload}</button>
             </div>
             <div className="address-bar">{Ic.lock}<span className="addr">{h.PREVIEW_PAGES[h.previewTab].host}</span></div>
-            <div className="dev-switch">
+            <div className="dev-switch" id="devSwitch">
               <button className={h.device === "desktop" ? "on" : ""} onClick={() => h.setDevice("desktop")} title="桌面">{Ic.monitor}</button>
               <button className={h.device === "tablet" ? "on" : ""} onClick={() => h.setDevice("tablet")} title="平板">{Ic.tablet}</button>
               <button className={h.device === "mobile" ? "on" : ""} onClick={() => h.setDevice("mobile")} title="手机">{Ic.phone}</button>
@@ -378,15 +373,12 @@ function SettingsModal({ h }: { h: Harness }) {
         <div className="set-group">
           <div className="g-title">Agent</div>
           <div className="set-row">
-            <div><div className="lbl">默认模型</div><div className="desc">澄清与执行使用的模型</div></div>
-            <select className="inp" defaultValue="deepseek-reasoner">
-              <option value="deepseek-reasoner">deepseek-reasoner</option>
-              <option value="deepseek-chat">deepseek-chat</option>
+            <div><div className="lbl">默认模型</div><div className="desc">对话与执行使用的真实模型</div></div>
+            <select className="inp" id="setModel" value={h.model} onChange={(e) => h.setModel(e.target.value)}>
+              <option value="deepseek-chat">deepseek-chat（快）</option>
+              <option value="deepseek-v4-pro">deepseek-v4-pro（强）</option>
+              <option value="deepseek-v4-flash">deepseek-v4-flash（极速）</option>
             </select>
-          </div>
-          <div className="set-row">
-            <div><div className="lbl">澄清轮数上限</div><div className="desc">最多追问几轮后直接给计划</div></div>
-            <select className="inp" defaultValue="3"><option value="2">2 轮</option><option value="3">3 轮</option><option value="4">4 轮</option></select>
           </div>
         </div>
         <div className="set-group">

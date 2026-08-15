@@ -5,18 +5,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "== 复制 node 运行时 =="
-mkdir -p resources/node/bin resources/node/lib
+mkdir -p src-tauri/resources/node/bin src-tauri/resources/node/lib
 REAL_NODE="$(python3 -c 'import os;print(os.path.realpath("/opt/homebrew/bin/node"))')"
-cp "$REAL_NODE" resources/node/bin/node
-chmod 755 resources/node/bin/node
+cp "$REAL_NODE" src-tauri/resources/node/bin/node
+chmod 755 src-tauri/resources/node/bin/node
 NODE_LIBDIR="$(dirname "$(dirname "$REAL_NODE")")/lib"
-cp "$NODE_LIBDIR"/libnode.*.dylib resources/node/lib/ 2>/dev/null || true
+cp "$NODE_LIBDIR"/libnode.*.dylib src-tauri/resources/node/lib/ 2>/dev/null || true
 
 echo "== 复制记忆服务 =="
-mkdir -p resources/memory-core resources/memory-proxy
-rm -rf resources/memory-core/* resources/memory-proxy/*
-cp -R "$HOME/.harness-memory/services/MemoryCore/." resources/memory-core/
-cp -R "$HOME/.harness-memory/services/MemoryProxy/." resources/memory-proxy/
+mkdir -p src-tauri/resources/memory-core src-tauri/resources/memory-proxy
+rm -rf src-tauri/resources/memory-core/* src-tauri/resources/memory-proxy/*
+cp -R "$HOME/.harness-memory/services/MemoryCore/." src-tauri/resources/memory-core/
+cp -R "$HOME/.harness-memory/services/MemoryProxy/." src-tauri/resources/memory-proxy/
 
 echo "== 完成 =="
-du -sh resources/
+du -sh src-tauri/resources/

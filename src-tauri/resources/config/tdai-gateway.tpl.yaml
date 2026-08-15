@@ -4,9 +4,12 @@ stateBackend: "local"
 server:
   port: 8420
   host: "127.0.0.1"
+  corsOrigins: ["*"]
 
 data:
-  baseDir: "__HOME__/Library/Application Support/dev.harness.desktop/memory-data"
+  # 与既有常驻服务的规范数据目录一致（~/.harness-memory/memory-data），
+  # 保证历史记忆（L0/L1/L2/L3）跨版本延续，不被新目录重置。
+  baseDir: "__HOME__/.harness-memory/memory-data"
 
 llm:
   baseUrl: "https://api.deepseek.com/v1"

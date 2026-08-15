@@ -28,3 +28,7 @@ src-tauri/icons/StoreLogo.png
 src-tauri/resources/node
 src-tauri/resources/memory-core
 src-tauri/resources/memory-proxy
+
+# Playwright 测试产物
+test-results/
+playwright-report/

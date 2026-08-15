@@ -36,15 +36,18 @@ function firstThread(): Thread {
   return t;
 }
 
+/* 模块级初始化一次：避免 StrictMode 双调用造成 id 不一致（白屏根因） */
+const INITIAL_THREADS = [firstThread()];
+
 export function useHarness() {
-  const [threads, setThreads] = useState<Thread[]>(() => [firstThread()]);
-  const [current, setCurrent] = useState<string>(() => "C-1");
+  const [threads, setThreads] = useState<Thread[]>(INITIAL_THREADS);
+  const [current, setCurrent] = useState<string>(INITIAL_THREADS[0].id);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTab, setPreviewTab] = useState(0);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [model, setModel] = useState("deepseek-chat");
+  const [model, setModel] = useState("deepseek-v4-pro");
   const [memCfg, setMemCfgState] = useState<MemoryConfig>(loadMemoryConfig);
   const setMemCfg = (cfg: MemoryConfig) => { saveMemoryConfig(cfg); setMemCfgState(cfg); };
   const { toasts, push } = useToasts();
@@ -67,6 +70,15 @@ export function useHarness() {
   };
 
   const pushMsg = (id: string, m: Msg) => patchThread(id, (t) => t.msgs.push(m));
+
+  /* E2E 测试钩子：?e2e=1 时暴露消息注入（仅用于确定性 UI 渲染测试） */
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("e2e")) {
+      (window as unknown as Record<string, unknown>).__e2eInject = (m: Partial<Msg> & { role: "user" | "agent" }) => {
+        pushMsg(currentRef.current, { id: Date.now(), time: now(), ...m } as Msg);
+      };
+    }
+  }, []);
 
   /* ---- 消息 → LLM 历史 ---- */
   const toLlmMessages = (t: Thread, recallCtx: string) => {
@@ -125,6 +137,8 @@ export function useHarness() {
     let recallCtx = "";
     if (isFirstUser && memCfg.enabled) {
       const rec = await recallMemory(text, memCfg);
+      // E2E 钩子：记录本次召回的真实来源（core/proxy/local/none）
+      (window as unknown as Record<string, unknown>).__lastRecallSource = rec.source;
       if (rec.source !== "none" && (rec.atoms.length || rec.persona)) {
         pushMsg(t.id, {
           id: Date.now(), role: "agent", kind: "recall",
@@ -149,6 +163,7 @@ export function useHarness() {
     /* 每轮对话写入真实记忆（L0） */
     if (res.content) {
       commitMemory(title, [{ role: "user", text }, { role: "agent", text: res.content }], memCfg).then((ok) => {
+        (window as unknown as Record<string, unknown>).__lastCommit = ok;
         if (ok) push("info", "已沉淀到记忆", "本轮对话已写入 MemoryCore（异步蒸馏 L1/L2/L3）");
       });
     }

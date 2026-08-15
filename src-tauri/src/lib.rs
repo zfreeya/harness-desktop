@@ -1,4 +1,6 @@
+use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -7,26 +9,120 @@ use tauri::Manager;
 /// 用户提供的 DeepSeek API Key（构建时打入二进制；本地单机 .app 分发）
 const DS_KEY: &str = "sk-0e97dc151b75440f8e08e5defb555b28";
 
-fn port_open(port: u16) -> bool {
+/// 极简 HTTP 探测：core 用 /health 精确验证；proxy 只要响应任意 HTTP 即算存活
+fn http_alive(port: u16, path: &str) -> bool {
     let addr = format!("127.0.0.1:{port}");
-    match addr.parse() {
-        Ok(a) => TcpStream::connect_timeout(&a, Duration::from_millis(300)).is_ok(),
-        Err(_) => false,
+    let Ok(a) = addr.parse() else { return false };
+    let Ok(mut s) = TcpStream::connect_timeout(&a, Duration::from_millis(800)) else { return false };
+    s.set_read_timeout(Some(Duration::from_millis(3000))).ok();
+    let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    if s.write_all(req.as_bytes()).is_err() { return false; }
+    let mut buf = [0u8; 128];
+    if s.read(&mut buf).is_err() { return false; }
+    let head = String::from_utf8_lossy(&buf);
+    if path == "/health" {
+        head.starts_with("HTTP/1.1 200")
+    } else {
+        head.starts_with("HTTP/1.1 ")
     }
 }
 
-/// 以孤儿进程方式拉起服务（App 退出后仍常驻，与 launchd 服务互斥检测端口避免重复启动）
+fn core_healthy() -> bool { http_alive(8420, "/health") }
+fn proxy_healthy() -> bool { http_alive(8096, "/") }
+
+/// 容错探测：服务在忙（蒸馏/LLM 任务）时单次探测可能超时，多次重试避免误杀健康服务
+fn probe_healthy(healthy: fn() -> bool, tries: u32) -> bool {
+    for _ in 0..tries {
+        if healthy() { return true; }
+        std::thread::sleep(Duration::from_millis(800));
+    }
+    healthy()
+}
+
+/// 以孤儿进程方式拉起服务（App 退出后仍常驻）
 fn spawn_service(node: &str, cwd: &str, args: &[&str], envs: &[(&str, &str)]) {
     let mut cmd = Command::new(node);
     cmd.args(args).current_dir(cwd).envs(envs.iter().copied());
     #[cfg(target_os = "macos")]
-    {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    { cmd.stdout(Stdio::null()).stderr(Stdio::null()); }
+    if let Ok(child) = cmd.spawn() { drop(child); }
+}
+
+fn xml_escape(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;") }
+
+fn plist(service: &str, node: &str, cwd: &str, args: &[&str], extra_env: &str) -> String {
+    // ProgramArguments[0] 必须是可执行文件本身（node），否则 launchd 直接 EX_CONFIG(78)
+    let mut args_xml = format!("    <string>{}</string>\n", xml_escape(node));
+    for a in args {
+        args_xml.push_str(&format!("    <string>{}</string>\n", xml_escape(a)));
     }
-    if let Ok(child) = cmd.spawn() {
-        // 放弃句柄：子进程成为孤儿常驻，App 退出不影响服务
-        drop(child);
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{label}</string>
+  <key>ProgramArguments</key><array>
+{args_xml}  </array>
+  <key>WorkingDirectory</key><string>{cwd}</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>TDAI_LLM_API_KEY</key><string>{key}</string>
+{extra_env}  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>{log_out}</string>
+  <key>StandardErrorPath</key><string>{log_err}</string>
+</dict></plist>
+"#,
+        label = format!("dev.harness.memory-{}", service),
+        cwd = xml_escape(cwd),
+        log_out = format!("/tmp/harness-{}.out.log", service),
+        log_err = format!("/tmp/harness-{}.err.log", service),
+        key = DS_KEY,
+    )
+}
+
+/// 确保 launchd 常驻服务在跑。已健康则不动（快启动、不打断运行中的服务）；
+/// 不健康才修复：bootout → 等旧实例完全卸载 → bootstrap（带重试），
+/// 避免「旧进程退出未完成导致 bootstrap 失败」的竞态（症状：服务被误杀后
+/// 标签消失、只能靠孤儿进程兜底）。
+fn ensure_launchd_service(label: &str, plist_path: &PathBuf, healthy: fn() -> bool) -> bool {
+    if probe_healthy(healthy, 3) { return true; }
+    let uid = unsafe { libc::getuid() };
+    let domain = format!("gui/{}/{}", uid, label);
+    let _ = Command::new("launchctl").args(["bootout", &domain]).output();
+    for _ in 0..10 {
+        let still = Command::new("launchctl")
+            .args(["print", &domain])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !still { break; }
+        std::thread::sleep(Duration::from_millis(500));
     }
+    let mut ok = false;
+    for _ in 0..4 {
+        ok = Command::new("launchctl")
+            .args(["bootstrap", &format!("gui/{}", uid), plist_path.to_str().unwrap_or("")])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if ok { break; }
+        std::thread::sleep(Duration::from_millis(1500));
+    }
+    if ok {
+        let _ = Command::new("launchctl").args(["enable", &domain]).output();
+    }
+    ok
+}
+
+fn wait_until(cond: fn() -> bool, timeout_secs: u64) -> bool {
+    let start = std::time::Instant::now();
+    while start.elapsed().as_secs() < timeout_secs {
+        if cond() { return true; }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    cond()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -53,28 +149,47 @@ pub fn run() {
             let proxy_dir = res.join("resources/memory-proxy");
             let gw_cfg = support.join("tdai-gateway.yaml").to_string_lossy().to_string();
             let px_cfg = support.join("proxy-config.yaml").to_string_lossy().to_string();
+            let node_s = node.to_string_lossy().to_string();
+            let core_s = core_dir.to_string_lossy().to_string();
+            let proxy_s = proxy_dir.to_string_lossy().to_string();
 
-            // MemoryCore 网关 :8420
-            if !port_open(8420) {
-                if let (Some(n), Some(c)) = (node.to_str(), core_dir.to_str()) {
-                    spawn_service(
-                        n, c,
-                        &["--import", "tsx", "src/gateway/server.ts"],
-                        &[
-                            ("TDAI_GATEWAY_CONFIG", gw_cfg.as_str()),
-                            ("TDAI_GATEWAY_HOST", "127.0.0.1"),
-                            ("TDAI_GATEWAY_PORT", "8420"),
-                            ("TDAI_LLM_API_KEY", DS_KEY),
-                        ],
-                    );
-                }
+            // 1) 写 launchd plist（指向 App 内资源，App 是服务的所有者）
+            let agents_dir = PathBuf::from(format!("{}/Library/LaunchAgents", home));
+            std::fs::create_dir_all(&agents_dir).ok();
+            let core_plist = agents_dir.join("dev.harness.memory-core.plist");
+            let proxy_plist = agents_dir.join("dev.harness.memory-proxy.plist");
+            std::fs::write(
+                &core_plist,
+                plist("core", &node_s, &core_s,
+                    &["--import", "tsx", "src/gateway/server.ts"],
+                    &format!("    <key>TDAI_GATEWAY_CONFIG</key><string>{}</string>\n    <key>TDAI_GATEWAY_HOST</key><string>127.0.0.1</string>\n    <key>TDAI_GATEWAY_PORT</key><string>8420</string>\n", xml_escape(&gw_cfg))),
+            ).ok();
+            std::fs::write(
+                &proxy_plist,
+                plist("proxy", &node_s, &proxy_s,
+                    &["--import", "tsx/esm", "src/index.ts", "--config", &px_cfg],
+                    ""),
+            ).ok();
+
+            // 2) 确保 launchd 服务在跑（健康则不动；不健康才修复，见 ensure_launchd_service）
+            ensure_launchd_service("dev.harness.memory-core", &core_plist, core_healthy);
+            ensure_launchd_service("dev.harness.memory-proxy", &proxy_plist, proxy_healthy);
+
+            // 3) 等健康；launchd 修复失败/不可用时回退到进程内自举（孤儿进程常驻）
+            if !wait_until(core_healthy, 25) {
+                spawn_service(&node_s, &core_s,
+                    &["--import", "tsx", "src/gateway/server.ts"],
+                    &[("TDAI_GATEWAY_CONFIG", gw_cfg.as_str()), ("TDAI_GATEWAY_HOST", "127.0.0.1"),
+                      ("TDAI_GATEWAY_PORT", "8420"), ("TDAI_LLM_API_KEY", DS_KEY)]);
+                wait_until(core_healthy, 25);
             }
-            // MemoryProxy :8096（LLM 转发 + 记忆注入层）
-            if !port_open(8096) {
-                if let (Some(n), Some(p)) = (node.to_str(), proxy_dir.to_str()) {
-                    spawn_service(n, p, &["--import", "tsx/esm", "src/index.ts", "--config", px_cfg.as_str()], &[]);
-                }
+            if !wait_until(proxy_healthy, 25) {
+                spawn_service(&node_s, &proxy_s,
+                    &["--import", "tsx/esm", "src/index.ts", "--config", px_cfg.as_str()], &[]);
+                wait_until(proxy_healthy, 25);
             }
+
+            println!("[harness] memory services ready: core={} proxy={}", core_healthy(), proxy_healthy());
             Ok(())
         })
         .run(tauri::generate_context!())

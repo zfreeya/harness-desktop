@@ -173,14 +173,14 @@ export async function chatCompletion(
   model: string,
   messages: { role: string; content: string }[]
 ): Promise<{ content: string; error?: string }> {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     const r = await chatOnce(cfg, model, messages);
     if (!r.error) return r;
     // 网络类失败（服务冷启动中）重试；HTTP 业务错误不重试
     if (!/fetch failed|Timeout|Load failed|NetworkError|Failed to fetch/i.test(r.error)) return r;
-    await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
+    await new Promise((res) => setTimeout(res, 2000 * (attempt + 1)));
   }
-  return { content: "", error: "连接 MemoryProxy 失败（服务可能仍在启动，稍后重试）" };
+  return { content: "", error: "连接 MemoryProxy 失败（服务正在启动或异常，稍后再试）" };
 }
 
 async function chatOnce(
@@ -194,7 +194,6 @@ async function chatOnce(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${cfg.userKey || "sk-mem-local"}`,
-        "user-agent": "deepseek-harness/desktop",
       },
       body: JSON.stringify({ model, messages, stream: false }),
       signal: AbortSignal.timeout(180000),

@@ -19,6 +19,34 @@ import type { ProxyConfig } from "./types.js";
 export function createApp(config: ProxyConfig): Hono {
   const app = new Hono();
 
+  // CORS：桌面 WebView / 浏览器页面跨源直连本机代理（127.0.0.1:8096）。
+  // 无中间件时浏览器预检 OPTIONS 会落到 catch-all 上 404，所有跨源请求被拦截。
+  // 上游(api.deepseek.com)会把自身 CORS 头透传回来，这里统一覆盖避免重复头。
+  app.use("*", async (c, next) => {
+    const origin = c.req.header("Origin");
+    const setCors = () => {
+      for (const h of [
+        "access-control-allow-origin",
+        "access-control-allow-credentials",
+        "access-control-allow-methods",
+        "access-control-allow-headers",
+      ]) c.res.headers.delete(h);
+      if (origin) c.res.headers.set("access-control-allow-origin", origin);
+      c.res.headers.set("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+      c.res.headers.set(
+        "access-control-allow-headers",
+        "Content-Type, Authorization, X-Agent-Name, X-Request-Id, User-Agent"
+      );
+      c.res.headers.set("access-control-max-age", "86400");
+    };
+    if (c.req.method === "OPTIONS") {
+      setCors();
+      return c.body(null, 204);
+    }
+    await next();
+    setCors();
+  });
+
   // Eagerly activate storage/bindingRepo so bridge-only requests (no main
   // /v1/messages hits yet) can still recover session state via L2 fallthrough
   // (memory-bridge.ts / skill-bridge.ts §6.1 fix). Idempotent; the injection

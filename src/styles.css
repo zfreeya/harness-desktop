@@ -71,9 +71,10 @@ input, select, textarea { font-family: inherit; }
   transition: opacity 0.6s var(--ease-reveal);
 }
 #boot .mark {
-  width: 68px; height: 68px; border-radius: 16px; background: var(--color-surface-1);
-  display: flex; align-items: center; justify-content: center; color: var(--color-ink);
+  width: 76px; height: 76px; border-radius: 20px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
   animation: bootIn 0.6s var(--ease-reveal) both;
+  box-shadow: 0 12px 32px rgba(0,0,0,.35);
 }
 #boot .mark svg { width: 34px; height: 34px; }
 #boot .name { color: rgba(255, 255, 255, 0.92); font-size: 16px; font-weight: 600; letter-spacing: 0.2px; animation: fadeUp 0.6s 0.2s var(--ease-reveal) both; }
@@ -91,7 +92,7 @@ input, select, textarea { font-family: inherit; }
 }
 #welcome.show { opacity: 1; pointer-events: auto; }
 .wel-wrap { width: min(760px, 92vw); padding: 48px 24px; }
-.wel-mark { width: 64px; height: 64px; border-radius: 14px; background: var(--color-ink); margin: 0 0 28px; display: flex; align-items: center; justify-content: center; color: #fff; }
+.wel-mark { width: 72px; height: 72px; border-radius: 18px; overflow: hidden; margin: 0 0 28px; display: flex; align-items: center; justify-content: center; }
 .wel-mark svg { width: 32px; height: 32px; }
 .wel-wrap h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.2; margin-bottom: 14px; animation: fadeUp 0.6s var(--ease-reveal) both; }
 .wel-wrap .sub { font-size: 15px; color: var(--color-ink-muted); line-height: 1.6; max-width: 46ch; margin-bottom: 36px; animation: fadeUp 0.6s 0.08s var(--ease-reveal) both; }
@@ -139,7 +140,7 @@ input, select, textarea { font-family: inherit; }
 /* ============ 侧栏 ============ */
 .sidebar { width: 232px; flex: none; display: flex; flex-direction: column; background: var(--color-canvas); border-right: 1px solid var(--color-hairline); padding: 12px 10px; }
 .side-brand { display: flex; align-items: center; gap: 9px; padding: 2px 10px 14px; }
-.side-brand .sb-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--color-ink); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.side-brand .sb-mark { width: 24px; height: 24px; border-radius: 7px; overflow: hidden; display: flex; align-items: center; justify-content: center; flex: none; }
 .side-brand .sb-mark svg { width: 11px; height: 11px; }
 .side-brand .sb-name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.2px; }
 .btn-new-chat { margin: 0 2px 12px; justify-content: center; }
