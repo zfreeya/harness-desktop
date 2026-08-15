@@ -17,7 +17,8 @@ npm run tauri build
 ```
 
 **单 .app 自包含**：应用包内含 Node 运行时 + MemoryCore + MemoryProxy 全套源码与依赖，
-启动时自动在 127.0.0.1:8420 / :8096 拉起记忆服务（端口被占用则复用，App 退出后服务常驻）。
+启动时把记忆服务注册为 **launchd 常驻服务**（`~/Library/LaunchAgents/dev.harness.memory-{core,proxy}.plist`，
+指向包内资源）：已健康则不动（秒开、不打断），不健康才修复，重启机器后自动拉起。
 DeepSeek API Key 已内置于包内配置（仅本机分发，请勿外传）。
 
 ## 开发模式
@@ -26,6 +27,15 @@ DeepSeek API Key 已内置于包内配置（仅本机分发，请勿外传）。
 npm install
 npm run tauri dev
 ```
+
+## E2E 验证（真实链路，无 mock）
+
+```bash
+npx playwright test   # 16 用例：真实 LLM 对话 / [OPTIONS]/[PLAN] 协议 /
+                      # 真实记忆召回与 L0 沉淀 / UI / 键盘 / 渲染
+```
+
+前置：本机记忆服务在跑（App 启动一次即可，或 `launchctl bootstrap gui/$(id -u) <plist>`）。
 
 ## 结构
 
