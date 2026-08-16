@@ -37,7 +37,7 @@ const SYSTEM_PROMPT = [
   "你是 DeepSeek Harness 桌面助手，一个能真实动手的编程与任务执行 Agent。你有一整套真实工具：",
   "bash（在工作目录运行 shell 命令）、read/write/edit（读写修改文件）、glob/grep（查找文件与代码）、fetch（抓取网页）、todo_write（维护任务清单）。",
   "行为准则：",
-  "1. 直接回答用户的问题，不绕弯子、不重复问候；凡是能用工具验证的（跑命令、看代码、读仓库、抓网页），先动手拿到真实结果再回答，不要空谈。",
+  "1. 严谨第一：先核实再下结论，不猜测、不编造；回答必须引用真实输出与证据。直接回答用户的问题，不绕弯子、不重复问候；凡是能用工具验证的（跑命令、看代码、读仓库、抓网页），先动手拿到真实结果再回答，不要空谈。改动文件前先读现状、说明要改什么，改完给出真实结果。",
   "2. 只有信息确实不足以动手时才问澄清问题，一次只问一个；需要用户在几个选项里选时，最后一行输出 [OPTIONS: 选项A | 选项B | 选项C]。",
   "3. 复杂任务（三步以上）先调用 todo_write 列出计划，再逐步执行；执行中简短汇报，完成后一句话总结真实结果。",
   "4. 用户明确要求输出 [PLAN] 计划或 [OPTIONS] 选项格式时必须严格遵守。",
@@ -215,7 +215,7 @@ export function useHarness() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(args),
-        signal: AbortSignal.timeout(310000),
+        signal: AbortSignal.timeout(180000),
       });
       const data = await res.json();
       const text = JSON.stringify(data);
@@ -238,7 +238,12 @@ export function useHarness() {
     if (t.thinking) { push("warn", "正在工作", "稍等它完成再发下一条"); return; }
     const isFirstUser = !t.msgs.some((m) => m.role === "user");
     const title = isFirstUser ? text.slice(0, 18) : t.title;
-    pushMsg(t.id, { id: Date.now(), role: "user", text, time: now() });
+    const userMsg: Msg = { id: Date.now(), role: "user", text, time: now() };
+    // 关键：LLM 历史必须包含「刚发出的这条消息」。
+    // threadsRef 要等 React 重渲染后才更新，同步读它会漏掉刚 push 的消息
+    // （症状：第二轮起的回复都在回答上一轮）。因此用本地快照构建历史。
+    const snapshot: Thread = { ...t, title, msgs: [...t.msgs, userMsg], thinking: true, todos: [...t.todos] };
+    pushMsg(t.id, userMsg);
     patchThread(t.id, (tt) => { tt.title = title; tt.thinking = true; });
 
     let recallCtx = "";
@@ -257,7 +262,7 @@ export function useHarness() {
     }
 
     const messages: { role: string; content: string; tool_calls?: LlmToolCall[]; tool_call_id?: string }[] =
-      toLlmMessages(threadsRef.current.find((x) => x.id === t.id)!, recallCtx);
+      toLlmMessages(snapshot, recallCtx);
     let finalContent = "";
     let finalError = "";
     const MAX_STEPS = 12;

@@ -21,8 +21,8 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: "node tools-server/index.mjs --workspace ./workspace",
-      url: "http://127.0.0.1:8450/health",
+      command: "node tools-server/index.mjs --workspace ./workspace --port 8451",
+      url: "http://127.0.0.1:8451/health",
       reuseExistingServer: true,
       timeout: 30_000,
     },

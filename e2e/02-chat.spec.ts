@@ -7,6 +7,14 @@ import { test, expect } from "@playwright/test";
  */
 test.describe("真实对话（LLM）", () => {
   test.describe.configure({ retries: 1 });
+
+test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("harness.tools.config", JSON.stringify({ url: "http://127.0.0.1:8451" }));
+      } catch { /* ignore */ }
+    });
+  });
   test("输入需求后收到真实模型回复", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));

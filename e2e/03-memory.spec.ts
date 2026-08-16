@@ -5,6 +5,14 @@ import { test, expect } from "@playwright/test";
  * 「来自记忆」召回块；每轮完成后写入 L0（capture）。
  */
 test.describe("真实记忆（TencentDB Agent Memory）", () => {
+
+test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("harness.tools.config", JSON.stringify({ url: "http://127.0.0.1:8451" }));
+      } catch { /* ignore */ }
+    });
+  });
   test("新对话首条消息触发真实记忆召回块", async ({ page }) => {
     await page.goto("/");
     await page.locator(".btn-new-chat").click();
