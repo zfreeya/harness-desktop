@@ -167,14 +167,29 @@ async function coreCommit(cfg: MemoryConfig, title: string, msgs: { role: string
   }
 }
 
-/* ---- 真实 LLM 对话（经 MemoryProxy 转发 + 记忆注入） ---- */
+/* ---- 真实 LLM 对话（经 MemoryProxy 转发 + 记忆注入 + 工具调用） ---- */
+
+export interface LlmToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+export interface LlmChatResult {
+  content: string;
+  tool_calls?: LlmToolCall[];
+  finish_reason?: string;
+  error?: string;
+}
+
 export async function chatCompletion(
   cfg: MemoryConfig,
   model: string,
-  messages: { role: string; content: string }[]
-): Promise<{ content: string; error?: string }> {
+  messages: { role: string; content: string; tool_calls?: unknown; tool_call_id?: string }[],
+  tools?: unknown[]
+): Promise<LlmChatResult> {
   for (let attempt = 0; attempt < 8; attempt++) {
-    const r = await chatOnce(cfg, model, messages);
+    const r = await chatOnce(cfg, model, messages, tools);
     if (!r.error) return r;
     // 网络类失败（服务冷启动中）重试；HTTP 业务错误不重试
     if (!/fetch failed|Timeout|Load failed|NetworkError|Failed to fetch/i.test(r.error)) return r;
@@ -186,26 +201,31 @@ export async function chatCompletion(
 async function chatOnce(
   cfg: MemoryConfig,
   model: string,
-  messages: { role: string; content: string }[]
-): Promise<{ content: string; error?: string }> {
+  messages: { role: string; content: string; tool_calls?: unknown; tool_call_id?: string }[],
+  tools?: unknown[]
+): Promise<LlmChatResult> {
   try {
+    const body: Record<string, unknown> = { model, messages, stream: false };
+    if (tools && tools.length) body.tools = tools;
     const res = await fetch(`${cfg.serverUrl}/${cfg.spaceId}/${cfg.teamId}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${cfg.userKey || "sk-mem-local"}`,
       },
-      body: JSON.stringify({ model, messages, stream: false }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(180000),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return { content: "", error: `HTTP ${res.status} ${body.slice(0, 140)}` };
+      const bodyText = await res.text().catch(() => "");
+      return { content: "", error: `HTTP ${res.status} ${bodyText.slice(0, 140)}` };
     }
     const data = await res.json();
-    const content: string = data?.choices?.[0]?.message?.content ?? "";
-    if (!content) return { content: "", error: "模型返回为空" };
-    return { content };
+    const message = data?.choices?.[0]?.message ?? {};
+    const content: string = message.content ?? "";
+    const tool_calls: LlmToolCall[] | undefined = message.tool_calls ?? undefined;
+    if (!content && !tool_calls?.length) return { content: "", error: "模型返回为空" };
+    return { content, tool_calls, finish_reason: data?.choices?.[0]?.finish_reason };
   } catch (e) {
     return { content: "", error: String(e) };
   }

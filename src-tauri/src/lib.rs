@@ -29,6 +29,7 @@ fn http_alive(port: u16, path: &str) -> bool {
 
 fn core_healthy() -> bool { http_alive(8420, "/health") }
 fn proxy_healthy() -> bool { http_alive(8096, "/") }
+fn tools_healthy() -> bool { http_alive(8450, "/health") }
 
 /// 容错探测：服务在忙（蒸馏/LLM 任务）时单次探测可能超时，多次重试避免误杀健康服务
 fn probe_healthy(healthy: fn() -> bool, tries: u32) -> bool {
@@ -50,7 +51,7 @@ fn spawn_service(node: &str, cwd: &str, args: &[&str], envs: &[(&str, &str)]) {
 
 fn xml_escape(s: &str) -> String { s.replace('&', "&amp;").replace('<', "&lt;") }
 
-fn plist(service: &str, node: &str, cwd: &str, args: &[&str], extra_env: &str) -> String {
+fn plist(label: &str, node: &str, cwd: &str, args: &[&str], extra_env: &str) -> String {
     // ProgramArguments[0] 必须是可执行文件本身（node），否则 launchd 直接 EX_CONFIG(78)
     let mut args_xml = format!("    <string>{}</string>\n", xml_escape(node));
     for a in args {
@@ -74,10 +75,10 @@ fn plist(service: &str, node: &str, cwd: &str, args: &[&str], extra_env: &str) -
   <key>StandardErrorPath</key><string>{log_err}</string>
 </dict></plist>
 "#,
-        label = format!("dev.harness.memory-{}", service),
+        label = xml_escape(label),
         cwd = xml_escape(cwd),
-        log_out = format!("/tmp/harness-{}.out.log", service),
-        log_err = format!("/tmp/harness-{}.err.log", service),
+        log_out = format!("/tmp/harness-{}.out.log", label.trim_start_matches("dev.harness.")),
+        log_err = format!("/tmp/harness-{}.err.log", label.trim_start_matches("dev.harness.")),
         key = DS_KEY,
     )
 }
@@ -147,33 +148,43 @@ pub fn run() {
             let node = res.join("resources/node/bin/node");
             let core_dir = res.join("resources/memory-core");
             let proxy_dir = res.join("resources/memory-proxy");
+            let tools_dir = res.join("resources/tools-server");
             let gw_cfg = support.join("tdai-gateway.yaml").to_string_lossy().to_string();
             let px_cfg = support.join("proxy-config.yaml").to_string_lossy().to_string();
             let node_s = node.to_string_lossy().to_string();
             let core_s = core_dir.to_string_lossy().to_string();
             let proxy_s = proxy_dir.to_string_lossy().to_string();
+            let tools_s = tools_dir.to_string_lossy().to_string();
 
             // 1) 写 launchd plist（指向 App 内资源，App 是服务的所有者）
             let agents_dir = PathBuf::from(format!("{}/Library/LaunchAgents", home));
             std::fs::create_dir_all(&agents_dir).ok();
             let core_plist = agents_dir.join("dev.harness.memory-core.plist");
             let proxy_plist = agents_dir.join("dev.harness.memory-proxy.plist");
+            let tools_plist = agents_dir.join("dev.harness.tools.plist");
             std::fs::write(
                 &core_plist,
-                plist("core", &node_s, &core_s,
+                plist("dev.harness.memory-core", &node_s, &core_s,
                     &["--import", "tsx", "src/gateway/server.ts"],
                     &format!("    <key>TDAI_GATEWAY_CONFIG</key><string>{}</string>\n    <key>TDAI_GATEWAY_HOST</key><string>127.0.0.1</string>\n    <key>TDAI_GATEWAY_PORT</key><string>8420</string>\n", xml_escape(&gw_cfg))),
             ).ok();
             std::fs::write(
                 &proxy_plist,
-                plist("proxy", &node_s, &proxy_s,
+                plist("dev.harness.memory-proxy", &node_s, &proxy_s,
                     &["--import", "tsx/esm", "src/index.ts", "--config", &px_cfg],
                     ""),
+            ).ok();
+            std::fs::write(
+                &tools_plist,
+                plist("dev.harness.tools", &node_s, &tools_s,
+                    &["index.mjs"],
+                    &format!("    <key>DSH_TOOLS_WORKSPACE</key><string>{}</string>\n    <key>DSH_TOOLS_PORT</key><string>8450</string>\n", xml_escape(&format!("{}/Harness", home)))),
             ).ok();
 
             // 2) 确保 launchd 服务在跑（健康则不动；不健康才修复，见 ensure_launchd_service）
             ensure_launchd_service("dev.harness.memory-core", &core_plist, core_healthy);
             ensure_launchd_service("dev.harness.memory-proxy", &proxy_plist, proxy_healthy);
+            ensure_launchd_service("dev.harness.tools", &tools_plist, tools_healthy);
 
             // 3) 等健康；launchd 修复失败/不可用时回退到进程内自举（孤儿进程常驻）
             if !wait_until(core_healthy, 25) {
@@ -188,8 +199,16 @@ pub fn run() {
                     &["--import", "tsx/esm", "src/index.ts", "--config", px_cfg.as_str()], &[]);
                 wait_until(proxy_healthy, 25);
             }
+            let tools_workspace = format!("{}/Harness", home);
+            let tools_workspace_s = tools_workspace.as_str();
+            if !wait_until(tools_healthy, 15) {
+                spawn_service(&node_s, &tools_s,
+                    &["index.mjs"],
+                    &[("DSH_TOOLS_WORKSPACE", tools_workspace_s), ("DSH_TOOLS_PORT", "8450")]);
+                wait_until(tools_healthy, 15);
+            }
 
-            println!("[harness] memory services ready: core={} proxy={}", core_healthy(), proxy_healthy());
+            println!("[harness] services ready: core={} proxy={} tools={}", core_healthy(), proxy_healthy(), tools_healthy());
             Ok(())
         })
         .run(tauri::generate_context!())

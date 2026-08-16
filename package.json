@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "tools": "node tools-server/index.mjs --workspace ./workspace",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

@@ -24,9 +24,9 @@ test.describe("真实对话（LLM）", () => {
     // 用户气泡出现
     await expect(page.locator(".msg.user .bubble")).toContainText("帮我做一个官网首页");
 
-    // 等待真实回复（模型 5~30 秒）：agent 消息数量必须增加（排除问候语误判）
-    const before = await page.locator(".msg.agent").count();
-    await expect(page.locator(".msg.agent")).toHaveCount(before + 1, { timeout: 90_000 });
+    // 等待真实回复（模型 5~30 秒）：agent 文本消息数量必须增加（排除问候语/工具行误判）
+    const before = await page.locator(".msg.agent .text").count();
+    await expect(page.locator(".msg.agent .text")).toHaveCount(before + 1, { timeout: 90_000 });
 
     const reply = page.locator(".msg.agent .text, .msg.agent .chips, .msg.agent .plan-card").last();
     await expect(reply).toBeVisible();

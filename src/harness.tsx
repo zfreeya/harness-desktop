@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Thread, Msg, newThread, greetingMsg, now } from "./state";
+import { Thread, Msg, Todo, newThread, greetingMsg, now } from "./state";
 import {
   MemoryConfig, loadMemoryConfig, saveMemoryConfig,
-  recallMemory, commitMemory, chatCompletion,
+  recallMemory, commitMemory, chatCompletion, LlmToolCall,
 } from "./memory";
 
 /* ================= Toast ================= */
@@ -19,29 +19,88 @@ export function useToasts() {
   return { toasts, push };
 }
 
-/* ================= 系统提示（澄清协议） ================= */
-const SYSTEM_PROMPT = `你是 DeepSeek Harness 桌面助手，一个需求驱动的执行助手。必须严格遵守以下输出协议：
-1. 用户需求模糊时，一次只问一个问题，绝不连问。
-2. 问题需要用户选择时，回复的最后一行必须输出选项行，格式严格为：
-[OPTIONS: 选项A | 选项B | 选项C]
-（2 到 4 个选项，竖线分隔，选项短小具体。例如：[OPTIONS: 暖白极简 | 深色终端 | 跟随现有品牌]）
-3. 意图清楚后，必须先给计划再动手：回复单独一行 [PLAN]，随后每行一条计划（以 - 开头，2 到 4 条），结尾一行问「确认开始执行吗？」。
-4. 用户明确确认后才开始执行；执行中简短汇报；完成后用一句话总结。
-5. 中文回复，简洁具体，不要寒暄。`;
+/* ================= 工具服务配置 ================= */
+export interface ToolsConfig { url: string; workspace?: string }
+const LS_TOOLS = "harness.tools.config";
+export function defaultToolsConfig(): ToolsConfig { return { url: "http://127.0.0.1:8450" }; }
+export function loadToolsConfig(): ToolsConfig {
+  try {
+    const raw = localStorage.getItem(LS_TOOLS);
+    if (raw) return { ...defaultToolsConfig(), ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return defaultToolsConfig();
+}
+export function saveToolsConfig(cfg: ToolsConfig) { localStorage.setItem(LS_TOOLS, JSON.stringify(cfg)); }
 
-/* ================= 真实 LLM 引擎 hook ================= */
+/* ================= 系统提示（直接回答 + 真实工具） ================= */
+const SYSTEM_PROMPT = [
+  "你是 DeepSeek Harness 桌面助手，一个能真实动手的编程与任务执行 Agent。你有一整套真实工具：",
+  "bash（在工作目录运行 shell 命令）、read/write/edit（读写修改文件）、glob/grep（查找文件与代码）、fetch（抓取网页）、todo_write（维护任务清单）。",
+  "行为准则：",
+  "1. 直接回答用户的问题，不绕弯子、不重复问候；凡是能用工具验证的（跑命令、看代码、读仓库、抓网页），先动手拿到真实结果再回答，不要空谈。",
+  "2. 只有信息确实不足以动手时才问澄清问题，一次只问一个；需要用户在几个选项里选时，最后一行输出 [OPTIONS: 选项A | 选项B | 选项C]。",
+  "3. 复杂任务（三步以上）先调用 todo_write 列出计划，再逐步执行；执行中简短汇报，完成后一句话总结真实结果。",
+  "4. 用户明确要求输出 [PLAN] 计划或 [OPTIONS] 选项格式时必须严格遵守。",
+  "5. 中文回复，简洁具体，引用真实输出，不要寒暄客套。",
+].join("\n");
+
+/* ================= 工具定义（对齐 deepseek-harness 关键工具） ================= */
+function buildTools() {
+  const str = (description: string) => ({ type: "string", description });
+  return [
+    { type: "function", function: { name: "bash", description: "在工作目录运行 shell 命令并返回 stdout/stderr。用于运行代码、测试、构建、浏览代码仓库（ls/cat/find/git）等。", parameters: { type: "object", properties: { command: str("要执行的 bash 命令，如 ls -la 或 node test.js") }, required: ["command"] } } },
+    { type: "function", function: { name: "read", description: "读取工作目录内的文本文件，返回带行号的内容。", parameters: { type: "object", properties: { path: str("相对工作目录的文件路径"), offset: { type: "integer", description: "起始行号，默认 1" }, limit: { type: "integer", description: "最多返回行数，默认 2000" } }, required: ["path"] } } },
+    { type: "function", function: { name: "write", description: "创建或整体覆盖工作目录内的文件。", parameters: { type: "object", properties: { path: str("相对工作目录的文件路径"), content: str("完整文件内容") }, required: ["path", "content"] } } },
+    { type: "function", function: { name: "edit", description: "对现有文件做精准文本替换。old_string 必须与文件内容完全一致且唯一（除非 replace_all=true）。", parameters: { type: "object", properties: { path: str("相对工作目录的文件路径"), old_string: str("要被替换的原文"), new_string: str("替换后的新文本"), replace_all: { type: "boolean", description: "是否替换全部匹配，默认 false" } }, required: ["path", "old_string", "new_string"] } } },
+    { type: "function", function: { name: "glob", description: "按 glob 模式查找文件（支持 * 与 **）。", parameters: { type: "object", properties: { pattern: str("glob 模式，如 **/*.ts"), path: str("查找起点目录，默认工作目录根") }, required: ["pattern"] } } },
+    { type: "function", function: { name: "grep", description: "在文件内容中按正则搜索，返回匹配行（含文件与行号）。", parameters: { type: "object", properties: { pattern: str("正则表达式"), path: str("搜索目录，默认工作目录根"), include: str("文件名过滤 glob，如 *.ts") }, required: ["pattern"] } } },
+    { type: "function", function: { name: "fetch", description: "抓取一个 http/https 网页并返回文本内容（截断到 300KB）。", parameters: { type: "object", properties: { url: str("完整 URL，如 https://example.com") }, required: ["url"] } } },
+    { type: "function", function: { name: "todo_write", description: "维护当前任务的待办清单。每次调用传完整清单整体替换。", parameters: { type: "object", properties: { todos: { type: "array", description: "完整待办列表", items: { type: "object", properties: { content: str("事项描述"), status: { type: "string", enum: ["pending", "in_progress", "completed"], description: "状态" } }, required: ["content", "status"] } } }, required: ["todos"] } } },
+  ];
+}
+
+/* ================= 真实 LLM + 真实工具引擎 hook ================= */
+const LS_THREADS = "harness.threads.v1";
+const LS_CURRENT = "harness.current.v1";
+
 function firstThread(): Thread {
   const t = newThread();
   t.msgs.push(greetingMsg());
   return t;
 }
 
+function normalizeThread(t: Partial<Thread>): Thread {
+  const base = newThread();
+  return {
+    ...base, ...t,
+    id: typeof t.id === "string" ? t.id : base.id,
+    title: typeof t.title === "string" && t.title ? t.title : "新对话",
+    status: "idle",
+    thinking: false,
+    msgs: Array.isArray(t.msgs) ? t.msgs.map((m) => ({ ...m, toolStatus: m.toolStatus === "running" ? "error" : m.toolStatus })) : [],
+    todos: Array.isArray(t.todos) ? t.todos : [],
+  };
+}
+
+function loadThreads(): Thread[] {
+  try {
+    const raw = localStorage.getItem(LS_THREADS);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length) return list.map(normalizeThread);
+    }
+  } catch { /* ignore */ }
+  return [firstThread()];
+}
+
 /* 模块级初始化一次：避免 StrictMode 双调用造成 id 不一致（白屏根因） */
-const INITIAL_THREADS = [firstThread()];
+const INITIAL_THREADS = loadThreads();
 
 export function useHarness() {
   const [threads, setThreads] = useState<Thread[]>(INITIAL_THREADS);
-  const [current, setCurrent] = useState<string>(INITIAL_THREADS[0].id);
+  const [current, setCurrentState] = useState<string>(() => {
+    try { return localStorage.getItem(LS_CURRENT) || INITIAL_THREADS[0].id; } catch { return INITIAL_THREADS[0].id; }
+  });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTab, setPreviewTab] = useState(0);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
@@ -49,10 +108,27 @@ export function useHarness() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [model, setModel] = useState("deepseek-v4-pro");
   const [memCfg, setMemCfgState] = useState<MemoryConfig>(loadMemoryConfig);
+  const [toolsCfg, setToolsCfgState] = useState<ToolsConfig>(loadToolsConfig);
   const setMemCfg = (cfg: MemoryConfig) => { saveMemoryConfig(cfg); setMemCfgState(cfg); };
+  const setToolsCfg = (cfg: ToolsConfig) => { saveToolsConfig(cfg); setToolsCfgState(cfg); };
   const { toasts, push } = useToasts();
 
-  const cur = threads.find((t) => t.id === current)!;
+  /* 工具服务工作目录展示 */
+  useEffect(() => {
+    fetch(toolsCfg.url + "/info").then((r) => r.json()).then((d) => {
+      if (d && d.workspace) setToolsCfgState((c) => (c.workspace === d.workspace ? c : { ...c, workspace: d.workspace }));
+    }).catch(() => undefined);
+  }, [toolsCfg.url]);
+
+  /* 会话持久化：每次变化落 localStorage（重开 App 不丢对话） */
+  useEffect(() => {
+    try { localStorage.setItem(LS_THREADS, JSON.stringify(threads)); } catch { /* ignore */ }
+  }, [threads]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_CURRENT, current); } catch { /* ignore */ }
+  }, [current]);
+
+  const cur = threads.find((t) => t.id === current) ?? threads[0];
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
   const currentRef = useRef(current);
@@ -62,7 +138,7 @@ export function useHarness() {
     setThreads((ts) =>
       ts.map((t) => {
         if (t.id !== id) return t;
-        const copy: Thread = { ...t, msgs: [...t.msgs] };
+        const copy: Thread = { ...t, msgs: [...t.msgs], todos: [...t.todos] };
         fn(copy);
         return copy;
       })
@@ -70,6 +146,9 @@ export function useHarness() {
   };
 
   const pushMsg = (id: string, m: Msg) => patchThread(id, (t) => t.msgs.push(m));
+
+  const patchMsg = (id: string, msgId: number, fn: (m: Msg) => Msg) =>
+    patchThread(id, (t) => { t.msgs = t.msgs.map((m) => (m.id === msgId ? fn(m) : m)); });
 
   /* E2E 测试钩子：?e2e=1 时暴露消息注入（仅用于确定性 UI 渲染测试） */
   useEffect(() => {
@@ -89,7 +168,7 @@ export function useHarness() {
       out.push({ role: "system", content: SYSTEM_PROMPT });
     }
     for (const m of t.msgs) {
-      if (m.kind === "recall") continue;
+      if (m.kind === "recall" || m.kind === "tool") continue;
       if (m.role === "user") {
         out.push({ role: "user", content: m.chip ?? m.text ?? "" });
       } else if (m.kind === "plan") {
@@ -123,12 +202,40 @@ export function useHarness() {
     return { kind: "text", text: content };
   };
 
-  /* ---- 核心：发送消息（真实 LLM + 真实记忆） ---- */
+  /* ---- 工具执行（tools-server + 本地 todo_write） ---- */
+  const toolEvents = useRef<{ name: string; args: unknown; result: string; status: string }[]>([]);
+  const execTool = async (name: string, args: Record<string, unknown>, threadId: string): Promise<string> => {
+    if (name === "todo_write") {
+      const todos = Array.isArray(args.todos) ? (args.todos as Todo[]) : [];
+      patchThread(threadId, (t) => { t.todos = todos.slice(0, 12); });
+      return JSON.stringify({ ok: true, todos: todos.slice(0, 12) });
+    }
+    try {
+      const res = await fetch(toolsCfg.url + "/" + name, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args),
+        signal: AbortSignal.timeout(310000),
+      });
+      const data = await res.json();
+      const text = JSON.stringify(data);
+      toolEvents.current.push({ name, args, result: text, status: "done" });
+      (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
+      return text;
+    } catch (e) {
+      const text = JSON.stringify({ error: "工具服务不可达：" + String(e) });
+      toolEvents.current.push({ name, args, result: text, status: "error" });
+      (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
+      return text;
+    }
+  };
+
+  /* ---- 核心：发送消息（真实 LLM + 真实工具循环 + 真实记忆） ---- */
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
     const t = threadsRef.current.find((x) => x.id === currentRef.current);
     if (!t) return;
-    if (t.thinking) { push("warn", "正在思考", "稍等它回复再发下一条"); return; }
+    if (t.thinking) { push("warn", "正在工作", "稍等它完成再发下一条"); return; }
     const isFirstUser = !t.msgs.some((m) => m.role === "user");
     const title = isFirstUser ? text.slice(0, 18) : t.title;
     pushMsg(t.id, { id: Date.now(), role: "user", text, time: now() });
@@ -149,25 +256,55 @@ export function useHarness() {
       }
     }
 
-    const latest = threadsRef.current.find((x) => x.id === t.id)!;
-    const res = await chatCompletion(memCfg, model, toLlmMessages(latest, recallCtx));
-    patchThread(t.id, (tt) => {
-      tt.thinking = false;
-      if (res.error) {
-        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "连接模型失败：" + res.error + "（检查设置里的 MemoryProxy 地址与密钥）", time: now() });
-        return;
+    const messages: { role: string; content: string; tool_calls?: LlmToolCall[]; tool_call_id?: string }[] =
+      toLlmMessages(threadsRef.current.find((x) => x.id === t.id)!, recallCtx);
+    let finalContent = "";
+    let finalError = "";
+    const MAX_STEPS = 12;
+
+    try {
+      for (let step = 0; step < MAX_STEPS; step++) {
+        const res = await chatCompletion(memCfg, model, messages, buildTools());
+        if (res.error) { finalError = res.error; break; }
+        const calls = res.tool_calls ?? [];
+        if (calls.length === 0) { finalContent = res.content; break; }
+        messages.push({ role: "assistant", content: res.content, tool_calls: calls });
+        for (const call of calls) {
+          let args: Record<string, unknown> = {};
+          try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* 保持空对象 */ }
+          const msgId = Date.now() + Math.floor(Math.random() * 1000);
+          pushMsg(t.id, {
+            id: msgId, role: "agent", kind: "tool", time: now(),
+            toolName: call.function.name,
+            toolArgs: JSON.stringify(args).slice(0, 400),
+            toolStatus: "running",
+          });
+          const result = await execTool(call.function.name, args, t.id);
+          patchMsg(t.id, msgId, (m) => ({ ...m, toolStatus: "done", toolResult: result.slice(0, 4000) }));
+          messages.push({ role: "tool", tool_call_id: call.id, content: result.slice(0, 8000) });
+        }
       }
-      const p = parseReply(res.content);
+      if (!finalContent && !finalError) finalContent = "已经完成了工具调用。";
+    } finally {
+      patchThread(t.id, (tt) => { tt.thinking = false; });
+    }
+
+    if (finalError) {
+      patchThread(t.id, (tt) => {
+        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "连接模型失败：" + finalError + "（检查设置里的 MemoryProxy 地址与密钥）", time: now() });
+      });
+      return;
+    }
+    const p = parseReply(finalContent);
+    patchThread(t.id, (tt) => {
       tt.msgs.push({ id: Date.now(), role: "agent", kind: p.kind, text: p.text, opts: p.opts, items: p.items, time: now() });
     });
     /* 每轮对话写入真实记忆（L0） */
-    if (res.content) {
-      commitMemory(title, [{ role: "user", text }, { role: "agent", text: res.content }], memCfg).then((ok) => {
-        (window as unknown as Record<string, unknown>).__lastCommit = ok;
-        if (ok) push("info", "已沉淀到记忆", "本轮对话已写入 MemoryCore（异步蒸馏 L1/L2/L3）");
-      });
-    }
-  }, [memCfg, model, push]);
+    commitMemory(title, [{ role: "user", text }, { role: "agent", text: finalContent }], memCfg).then((ok) => {
+      (window as unknown as Record<string, unknown>).__lastCommit = ok;
+      if (ok) push("info", "已沉淀到记忆", "本轮对话已写入 MemoryCore（异步蒸馏 L1/L2/L3）");
+    });
+  }, [memCfg, model, push, toolsCfg]);
 
   const pickChip = (mi: number, oi: number) => {
     const t = threadsRef.current.find((x) => x.id === currentRef.current);
@@ -182,7 +319,7 @@ export function useHarness() {
   const reconsiderPlan = () => sendMessage("我想修改计划");
 
   const switchThread = (id: string) => {
-    setCurrent(id);
+    setCurrentState(id);
     const t = threadsRef.current.find((x) => x.id === id);
     if (t && !t.msgs.some((m) => m.kind === "recall") && t.msgs.length <= 1) setPreviewOpen(false);
   };
@@ -190,7 +327,7 @@ export function useHarness() {
   const newChat = () => {
     const t = firstThread();
     setThreads((ts) => [t, ...ts]);
-    setCurrent(t.id);
+    setCurrentState(t.id);
     setPreviewOpen(false);
   };
 
@@ -218,6 +355,7 @@ export function useHarness() {
     settingsOpen, setSettingsOpen, paletteOpen, setPaletteOpen,
     model, setModel,
     memCfg, setMemCfg,
+    toolsCfg, setToolsCfg,
     toasts, push,
     PREVIEW_PAGES: [
       { name: "Harness 官网", url: "preview-demo.html", host: "harness.local" },

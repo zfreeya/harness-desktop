@@ -13,10 +13,18 @@ export default defineConfig({
     actionTimeout: 20_000,
     viewport: { width: 1280, height: 800 },
   },
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:1420",
-    reuseExistingServer: true,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: "npm run dev",
+      url: "http://localhost:1420",
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
+    {
+      command: "node tools-server/index.mjs --workspace ./workspace",
+      url: "http://127.0.0.1:8450/health",
+      reuseExistingServer: true,
+      timeout: 30_000,
+    },
+  ],
 });

@@ -76,7 +76,7 @@ function Welcome({ onStart }: { onStart: () => void }) {
 /* ================= 标题栏 ================= */
 function TitleBar({ h }: { h: Harness }) {
   const busy = h.cur.thinking;
-  const label = h.cur.thinking ? "harness-agent 思考中" : "harness-agent 在线";
+  const label = h.cur.thinking ? "harness-agent 工作中" : "harness-agent 在线";
   const dot = h.cur.thinking ? "working" : "idle";
   return (
     <div className="win-titlebar" data-tauri-drag-region>
@@ -186,6 +186,26 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
       </div>
     );
   }
+  if (m.kind === "tool") {
+    const done = m.toolStatus === "done";
+    const err = m.toolStatus === "error";
+    return (
+      <div className="msg agent tool-row">
+        <div className={"tool-line" + (done ? " ok" : "") + (err ? " err" : "")}>
+          <span className="tool-badge">{done ? Ic.check : Ic.spark}</span>
+          <span className="tool-name mono">{m.toolName}</span>
+          <span className="tool-args mono">{m.toolArgs}</span>
+          {m.toolStatus === "running" && <span className="tool-wait"><i /><i /><i /></span>}
+        </div>
+        {done && m.toolResult && (
+          <details className="tool-details">
+            <summary>结果</summary>
+            <pre>{m.toolResult}</pre>
+          </details>
+        )}
+      </div>
+    );
+  }
   if (m.kind === "plan") {
     const items = m.items ?? [];
     return (
@@ -230,6 +250,17 @@ function ChatView({ h }: { h: Harness }) {
       </div>
       <div className="msg-scroll" ref={scrollRef}>
         <div className="msg-col">
+          {h.cur.todos.length > 0 && (
+            <div className="todo-card">
+              <div className="todo-title">任务清单</div>
+              {h.cur.todos.map((td, i) => (
+                <div key={i} className={"todo-item " + td.status}>
+                  <span className="todo-check">{td.status === "completed" ? Ic.check : td.status === "in_progress" ? "·" : ""}</span>
+                  <span className="todo-text">{td.content}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {h.cur.msgs.map((m, i) => <MsgRow key={m.id} m={m} h={h} mi={i} />)}
           {h.cur.thinking && (
             <div className="msg agent">
@@ -237,7 +268,7 @@ function ChatView({ h }: { h: Harness }) {
                 <span className="a-mark">{Ic.spark}</span>
                 <span className="a-name">harness-agent</span>
               </div>
-              <div className="thinking"><span className="tt">正在思考</span><i /><i /><i /></div>
+              <div className="thinking"><span className="tt">正在工作</span><i /><i /><i /></div>
             </div>
           )}
         </div>
@@ -248,7 +279,7 @@ function ChatView({ h }: { h: Harness }) {
           <textarea
             id="chatInput"
             rows={1}
-            placeholder="描述你想做的事，模糊也没关系…"
+            placeholder="描述你想做的事，我可以直接动手：跑命令、读代码、写文件…"
             value={text}
             onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
@@ -379,6 +410,17 @@ function SettingsModal({ h }: { h: Harness }) {
               <option value="deepseek-v4-pro">deepseek-v4-pro（强）</option>
               <option value="deepseek-v4-flash">deepseek-v4-flash（极速）</option>
             </select>
+          </div>
+        </div>
+        <div className="set-group">
+          <div className="g-title">工具执行（Agent Tools）</div>
+          <div className="set-row">
+            <div><div className="lbl">工具服务地址</div><div className="desc">bash / 文件 / 网页工具后端，默认 http://127.0.0.1:8450</div></div>
+            <input className="inp-txt" style={{ width: 180 }} value={h.toolsCfg.url} onChange={(e) => h.setToolsCfg({ ...h.toolsCfg, url: e.target.value })} />
+          </div>
+          <div className="set-row">
+            <div><div className="lbl">工作目录</div><div className="desc">Agent 读写文件的根目录（由工具服务指定）</div></div>
+            <span style={{ fontSize: 11, color: "var(--color-ink-muted)", fontFamily: "var(--font-mono)" }}>{h.toolsCfg.workspace ?? "（服务未连接）"}</span>
           </div>
         </div>
         <div className="set-group">

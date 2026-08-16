@@ -18,5 +18,10 @@ rm -rf src-tauri/resources/memory-core/* src-tauri/resources/memory-proxy/*
 cp -R "$HOME/.harness-memory/services/MemoryCore/." src-tauri/resources/memory-core/
 cp -R "$HOME/.harness-memory/services/MemoryProxy/." src-tauri/resources/memory-proxy/
 
+echo "== 复制工具服务 =="
+mkdir -p src-tauri/resources/tools-server
+rm -rf src-tauri/resources/tools-server/*
+cp tools-server/index.mjs src-tauri/resources/tools-server/
+
 echo "== 完成 =="
 du -sh src-tauri/resources/
