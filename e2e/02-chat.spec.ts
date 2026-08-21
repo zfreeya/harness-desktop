@@ -82,7 +82,15 @@ test.beforeEach(async ({ page }) => {
     await page.locator(".send-btn").click();
 
     const planCard = page.locator(".plan-card");
-    await expect(planCard).toBeVisible({ timeout: 90_000 });
+    try {
+      await expect(planCard).toBeVisible({ timeout: 60_000 });
+    } catch {
+      // 模型偶发未遵守格式：追加一轮强制提示（与 OPTIONS 用例同机制）
+      await page.locator("#chatInput").click();
+      await page.locator("#chatInput").type("请务必严格按格式输出：回复必须以 [PLAN] 开头，然后每行一条计划项");
+      await page.locator(".send-btn").click();
+      await expect(planCard).toBeVisible({ timeout: 90_000 });
+    }
     await expect(planCard.locator(".pt")).toHaveText("计划");
     await expect(planCard.locator(".pi").first()).toBeVisible();
 

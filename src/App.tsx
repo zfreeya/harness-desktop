@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useHarness, Harness } from "./harness";
 import { statusBadge } from "./state";
+import Markdown from "./Markdown";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -154,7 +155,7 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
     return (
       <div className="msg agent">
         <AgentHead />
-        <div className="text">{m.text}</div>
+        <div className="text"><Markdown text={m.text ?? ""} /></div>
         {opts.length > 0 && (
           <div className="chips">
             {opts.map((o, i) => (
@@ -211,7 +212,7 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
     return (
       <div className="msg agent">
         <AgentHead />
-        <div className="text">{m.text}</div>
+        <div className="text"><Markdown text={m.text ?? ""} /></div>
         {items.length > 0 && (
           <div className="plan-card">
             <div className="pt">计划</div>
@@ -227,7 +228,7 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
       </div>
     );
   }
-  return <div className="msg agent"><AgentHead /><div className="text">{m.text}</div></div>;
+  return <div className="msg agent"><AgentHead /><div className="text"><Markdown text={m.text ?? ""} /></div></div>;
 }
 
 /* ================= 对话区 ================= */

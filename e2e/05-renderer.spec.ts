@@ -42,6 +42,43 @@ test.describe("消息渲染器（确定性注入）", () => {
     await expect(page.locator(".mem-block .mem-label")).toContainText("来自记忆");
   });
 
+  test("Agent 回复按 Markdown 渲染（列表/加粗/代码/表格）且安全转义", async ({ page }) => {
+    await page.goto("/?e2e=1");
+    const md = [
+      "# 标题一",
+      "",
+      "- 要点A",
+      "- 要点B",
+      "",
+      "**加粗** 与 `行内代码`",
+      "",
+      "```js",
+      "console.log(1);",
+      "```",
+      "",
+      "| 列1 | 列2 |",
+      "|---|---|",
+      "| a | b |",
+      "",
+      "[链接](https://example.com)",
+      "",
+      "<img src=x onerror=window.__xss=1>",
+    ].join("\n");
+    await page.evaluate((text) => (window as any).__e2eInject({ role: "agent", kind: "text", text }), md);
+
+    await expect(page.locator(".md h1")).toHaveText("标题一");
+    await expect(page.locator(".md ul li")).toHaveCount(2);
+    await expect(page.locator(".md strong")).toHaveText("加粗");
+    await expect(page.locator(".md code").first()).toHaveText("行内代码");
+    await expect(page.locator(".md pre code")).toContainText("console.log(1)");
+    await expect(page.locator(".md table th").first()).toHaveText("列1");
+    await expect(page.locator(".md a")).toHaveText("链接");
+    // XSS 安全：原始 HTML 被转义为文本，不产生 img 元素、不执行脚本
+    await expect(page.locator(".md img")).toHaveCount(0);
+    const xss = await page.evaluate(() => (window as any).__xss);
+    expect(xss).toBeUndefined();
+  });
+
   test("模型回复错误时显示错误信息而非白屏", async ({ page }) => {
     await page.goto("/?e2e=1");
     await page.waitForSelector("#window.app-on");

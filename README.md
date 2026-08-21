@@ -12,6 +12,7 @@ DeepSeek Harness 桌面端 - 对话式 Agent 工作台（Tauri 2 + React + TypeS
 - **停止按钮**：长任务可随时中断（abort 模型等待与工具执行）；连续快速发送有同步竞态防护
 - **线程状态流转**：空闲 → 执行中 → 已完成，「清空已完成对话」真实生效；模型选择与减弱动态效果均持久化
 - 工具执行失败有错误态行 + 错误 toast；内置浏览器预览面板（右侧滑出）、⌘K 命令面板、真实窗口控制、任务清单卡与工具执行行渲染
+- **Agent 回复 Markdown 渲染**：标题/列表/加粗/代码块/表格（GFM），原始 HTML 安全转义（防 XSS），链接在 Tauri 内用系统浏览器打开
 
 设计规范见仓库根目录 `DESIGN.md`；记忆技术设计见 `docs/MEMORY.md`；工具执行服务设计见 `docs/TOOLS.md`。
 
@@ -38,8 +39,9 @@ npm run tauri dev
 ## E2E 验证（真实链路，无 mock）
 
 ```bash
-npx playwright test   # 27 用例：真实 Agent 工具流（bash/写文件）/ 真实 LLM 对话 /
-                      # [OPTIONS]/[PLAN] 协议 / 真实记忆召回与 L0 沉淀 / 会话持久化 / 竞态防护 /
+npx playwright test   # 28 用例：真实 Agent 工具流（bash/写文件）/ 真实 LLM 对话 /
+                      # [OPTIONS]/[PLAN] 协议 / 真实记忆召回与 L0 沉淀 / Markdown 渲染与 XSS 安全 /
+                      # 会话持久化 / 竞态防护 /
                       # 停止中断 / 持久化设置 / 错误可见性 / UI / 键盘 / 渲染
 ```
 
