@@ -6,7 +6,7 @@ test.describe("预览面板（内置浏览器）", () => {
     // 初始收起
     await expect(page.locator("#previewPane")).not.toHaveClass(/open/);
     // 打开
-    await page.locator(".chat-head .head-btn").first().click();
+    await page.locator(".win-titlebar .head-btn").first().click();
     await expect(page.locator("#previewPane")).toHaveClass(/open/);
     // iframe 懒加载真实页面
     const frame = page.locator("#previewFrame");
@@ -48,13 +48,13 @@ test.describe("命令面板与设置", () => {
 
   test("设置：记忆开关与地址输入真实生效（localStorage 持久化）", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".chat-head .head-btn").nth(1).click();
+    await page.locator(".win-titlebar .head-btn").nth(1).click();
     await expect(page.locator("#settingsModal")).toHaveClass(/show/);
     // 记忆开关（自定义 switch 的 input 是零尺寸，用 force 操作）
     const memSwitch = page.locator('#settingsModal .switch').first();
     await memSwitch.click();
     await page.reload();
-    await page.locator(".chat-head .head-btn").nth(1).click();
+    await page.locator(".win-titlebar .head-btn").nth(1).click();
     await expect(page.locator('#settingsModal input[type="checkbox"]').first()).not.toBeChecked();
     // 恢复
     await page.locator('#settingsModal .switch').first().click();
@@ -62,7 +62,7 @@ test.describe("命令面板与设置", () => {
 
   test("模型选择器可切换 deepseek-v4-pro", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".chat-head .head-btn").nth(1).click();
+    await page.locator(".win-titlebar .head-btn").nth(1).click();
     const sel = page.locator("#setModel");
     await sel.selectOption("deepseek-v4-pro");
     await expect(sel).toHaveValue("deepseek-v4-pro");

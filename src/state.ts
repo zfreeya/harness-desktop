@@ -1,6 +1,6 @@
 /* ================= Harness 状态类型（真实 LLM 引擎 + 真实工具流，无 mock 数据） ================= */
 
-export type ThreadStatus = "thinking" | "idle" | "done";
+export type ThreadStatus = "waiting" | "working" | "done" | "error";
 
 export type MsgKind = "ask" | "recall" | "plan" | "text" | "tool";
 
@@ -34,6 +34,8 @@ export interface Thread {
   msgs: Msg[];
   thinking: boolean;
   todos: Todo[];
+  /** 本任务的交付物（agent 生成的 .html 等，渲染为成果卡） */
+  deliverables: { path: string; name: string; t: number }[];
 }
 
 export const now = () =>
@@ -43,11 +45,12 @@ let tid = 1;
 export function newThread(): Thread {
   return {
     id: "C-" + tid++,
-    title: "新对话",
-    status: "idle",
+    title: "新任务",
+    status: "waiting",
     msgs: [],
     thinking: false,
     todos: [],
+    deliverables: [],
   };
 }
 
@@ -62,9 +65,11 @@ export function greetingMsg(): Msg {
 }
 
 export function statusBadge(s: ThreadStatus): { cls: string; label: string } {
-  return s === "thinking"
+  return s === "working"
     ? { cls: "active", label: "执行中" }
     : s === "done"
       ? { cls: "done", label: "已完成" }
-      : { cls: "neutral", label: "空闲" };
+      : s === "error"
+        ? { cls: "error", label: "发生错误" }
+        : { cls: "neutral", label: "等待回复" };
 }

@@ -41,8 +41,8 @@ test.describe("桌面端优化专项", () => {
     await page.locator("#chatInput").type("请直接调用 bash 工具执行 sleep 25，不要先回复文字。");
     const start = Date.now();
     await page.locator(".send-btn").click();
-    // 工具行出现（running）后立即停止
-    await expect(page.locator(".tool-line")).toBeVisible({ timeout: 60_000 });
+    // 工具组出现（running）后立即停止
+    await expect(page.locator(".tool-group")).toBeVisible({ timeout: 60_000 });
     await page.locator(".send-btn.stop").click();
     // thinking 指示消失、出现「已停止」消息、且总耗时远小于 25s 的 sleep
     await expect(page.locator(".thinking")).toHaveCount(0, { timeout: 10_000 });
@@ -62,20 +62,21 @@ test.describe("桌面端优化专项", () => {
 
   test("线程状态徽章流转与清空已完成", async ({ page }) => {
     await page.goto("/");
-    // 初始：空闲
-    await expect(page.locator(".thread-item .badge").first()).toHaveText("空闲");
+    // 初始：等待回复（状态点）
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "waiting");
+    await expect(page.locator(".win-titlebar .badge")).toHaveText("等待回复");
     // 发一条消息等完成
     await page.locator("#chatInput").click();
     await page.locator("#chatInput").type("回复 OK 两个字即可");
     await page.locator(".send-btn").click();
-    // 执行中（thinking 期间徽章为执行中，不阻塞等待，直接等最终态）
     await expect(page.locator(".msg.agent .text").last()).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".thread-item .badge").first()).toHaveText("已完成");
-    // ⌘K 清空已完成 → 只剩一个新的空闲线程
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "done");
+    await expect(page.locator(".win-titlebar .badge")).toHaveText("已完成");
+    // ⌘K 清空已完成 → 只剩一个新的等待回复线程
     await page.keyboard.press("Meta+k");
-    await page.locator(".palette-item", { hasText: "清空已完成对话" }).click();
+    await page.locator(".palette-item", { hasText: "清空已完成任务" }).click();
     await expect(page.locator(".thread-item")).toHaveCount(1);
-    await expect(page.locator(".thread-item .badge").first()).toHaveText("空闲");
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "waiting");
   });
 
   test("减弱动态效果持久化", async ({ page }) => {
@@ -100,8 +101,8 @@ test.describe("桌面端优化专项", () => {
     await page.locator("#chatInput").click();
     await page.locator("#chatInput").type("请先调用 bash 工具执行 echo hi，再把工具的真实输出告诉我，不要直接回答。");
     await page.locator(".send-btn").click();
-    // 工具行出现且为错误态
-    await expect(page.locator(".tool-line.err")).toBeVisible({ timeout: 90_000 });
+    // 工具组出现且为错误强调态（无需展开即可见）
+    await expect(page.locator(".tool-group.err")).toBeVisible({ timeout: 90_000 });
     await expect(page.locator(".toast.error")).toBeVisible({ timeout: 30_000 });
     // 模型看到工具错误后给出最终回复（页面无白屏）
     await expect(page.locator(".msg.agent .text").last()).toBeVisible({ timeout: 90_000 });

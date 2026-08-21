@@ -81,10 +81,11 @@ function normalizeThread(t: Partial<Thread>): Thread {
     ...base, ...t,
     id: typeof t.id === "string" ? t.id : base.id,
     title: typeof t.title === "string" && t.title ? t.title : "新对话",
-    status: "idle",
+    status: t.status === "working" || t.status === "done" || t.status === "error" || t.status === "waiting" ? t.status : "waiting",
     thinking: false,
     msgs: Array.isArray(t.msgs) ? t.msgs.map((m) => ({ ...m, toolStatus: m.toolStatus === "running" ? "error" : m.toolStatus })) : [],
     todos: Array.isArray(t.todos) ? t.todos : [],
+    deliverables: Array.isArray(t.deliverables) ? t.deliverables : [],
   };
 }
 
@@ -179,7 +180,7 @@ export function useHarness() {
     setThreads((ts) =>
       ts.map((t) => {
         if (t.id !== id) return t;
-        const copy: Thread = { ...t, msgs: [...t.msgs], todos: [...t.todos] };
+        const copy: Thread = { ...t, msgs: [...t.msgs], todos: [...t.todos], deliverables: [...t.deliverables] };
         fn(copy);
         return copy;
       })
@@ -280,15 +281,23 @@ export function useHarness() {
       const failed = Boolean(data && typeof data === "object" && "error" in data);
       toolEvents.current.push({ name, args, result: text, status: failed ? "error" : "done" });
       (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
-      /* HTML 产物 → 工作目录预览：新建自动打开面板，改动自动刷新 */
+      /* HTML 产物 → 工作目录预览 + 任务交付物：新建自动打开面板，改动自动刷新并重命名任务 */
       if (!failed && (name === "write" || name === "edit") && typeof args.path === "string" && /\.html?$/i.test(args.path)) {
         const p = String(args.path);
+        const base = p.split("/").pop() ?? p;
         const existed = wsPreviewsRef.current.some((x) => x.path === p);
         setWsPreviews((list) => {
           const t = Date.now();
           return list.some((x) => x.path === p)
             ? list.map((x) => (x.path === p ? { ...x, t } : x))
-            : [...list, { path: p, name: p.split("/").pop() ?? p, t }];
+            : [...list, { path: p, name: base, t }];
+        });
+        patchThread(threadId, (tt) => {
+          const has = tt.deliverables.some((d) => d.path === p);
+          tt.deliverables = has
+            ? tt.deliverables.map((d) => (d.path === p ? { ...d, t: Date.now() } : d))
+            : [...tt.deliverables, { path: p, name: base, t: Date.now() }];
+          tt.title = base + " · 网页预览";
         });
         if (!existed) {
           setPreviewTab(PREVIEW_PAGES.length + wsPreviewsRef.current.length);
@@ -331,7 +340,7 @@ export function useHarness() {
     // （症状：第二轮起的回复都在回答上一轮）。因此用本地快照构建历史。
     const snapshot: Thread = { ...t, title, msgs: [...t.msgs, userMsg], thinking: true, todos: [...t.todos] };
     pushMsg(t.id, userMsg);
-    patchThread(t.id, (tt) => { tt.title = title; tt.thinking = true; tt.status = "thinking"; });
+    patchThread(t.id, (tt) => { tt.title = title; tt.thinking = true; tt.status = "working"; });
 
     let recallCtx = "";
     if (isFirstUser && memCfg.enabled) {
@@ -386,17 +395,19 @@ export function useHarness() {
     } finally {
       busyRef.current = false;
       stopCtrlRef.current = null;
-      patchThread(t.id, (tt) => { tt.thinking = false; tt.status = "idle"; });
+      patchThread(t.id, (tt) => { tt.thinking = false; });
     }
 
     if (stopped) {
       patchThread(t.id, (tt) => {
+        tt.status = "waiting";
         tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "已停止。", time: now() });
       });
       return;
     }
     if (finalError) {
       patchThread(t.id, (tt) => {
+        tt.status = "error";
         tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "连接模型失败：" + finalError + "（检查设置里的 MemoryProxy 地址与密钥）", time: now() });
       });
       return;

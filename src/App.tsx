@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useHarness, Harness } from "./harness";
-import { statusBadge } from "./state";
+import { Msg, statusBadge } from "./state";
 import Markdown from "./Markdown";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -16,12 +16,8 @@ async function winAction(action: "close" | "minimize" | "maximize") {
 
 /* ================= 图标 ================= */
 const Ic = {
-  mark: (
-    <img src="/icon.png" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} />
-  ),
-  spark: (
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 2.4 3.3-.5.5 3.3L21 9.6l-1.8 2.8 1.8 2.8-2.8 1.8-.5 3.3-3.3-.5L12 22l-2.4-2.4-3.3.5-.5-3.3L3 15.2l1.8-2.8L3 9.6l2.8-1.8.5-3.3 3.3.5z" /><circle cx="12" cy="11" r="3.2" fill="#fff" /></svg>
-  ),
+  mark: (<img src="/icon.png" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} />),
+  spark: (<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 2.4 3.3-.5.5 3.3L21 9.6l-1.8 2.8 1.8 2.8-2.8 1.8-.5 3.3-3.3-.5L12 22l-2.4-2.4-3.3.5-.5-3.3L3 15.2l1.8-2.8L3 9.6l2.8-1.8.5-3.3 3.3.5z" /><circle cx="12" cy="11" r="3.2" fill="#fff" /></svg>),
   plus: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>),
   search: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" /></svg>),
   monitor: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>),
@@ -32,53 +28,17 @@ const Ic = {
   chevR: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>),
   chevD: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>),
   check: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>),
-  send: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>),
+  send: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>),
   clip: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>),
   reload: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" /></svg>),
   lock: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>),
   doc: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></svg>),
+  panel: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>),
 };
 
-/* ================= 开机 ================= */
-function Boot({ done }: { done: boolean }) {
-  return (
-    <div id="boot" className={done ? "done" : ""}>
-      <div className="mark">{Ic.mark}</div>
-      <div className="name">DeepSeek Harness</div>
-      <div className="bar"><i /></div>
-    </div>
-  );
-}
-
-/* ================= 欢迎 ================= */
-function Welcome({ onStart }: { onStart: () => void }) {
-  return (
-    <div id="welcome" className="show">
-      <div className="wel-wrap">
-        <div className="wel-mark">{Ic.mark}</div>
-        <h1>描述模糊没关系，它会问到清楚</h1>
-        <p className="sub">只需要一个对话框。说出你想要的，Agent 会一个一个地问清楚，确认计划后才动手，安静地做完，再把结果交给你。</p>
-        <div className="bento">
-          <div className="b-cell b-main">
-            <div className="bt">一直询问，不猜你的意思</div>
-            <div className="bd">一次只问一个问题，给选项让你点。问到意图清楚为止，最多三轮，然后给计划。</div>
-          </div>
-          <div className="b-cell b-tint"><div className="bt">计划先行</div><div className="bd">动手前先给计划，你点头才开始</div></div>
-          <div className="b-cell b-mono"><span>$ clarify</span><span>$ plan</span><span>$ execute</span></div>
-          <div className="b-cell"><div className="bt">执行静默</div><div className="bd">细节收在「查看详情」里</div></div>
-          <div className="b-cell"><div className="bt">预览按需</div><div className="bd">完成后一键打开，看完即关</div></div>
-        </div>
-        <button className="btn btn-primary" onClick={onStart}>开始对话</button>
-      </div>
-    </div>
-  );
-}
-
-/* ================= 标题栏 ================= */
-function TitleBar({ h }: { h: Harness }) {
-  const busy = h.cur.thinking;
-  const label = h.cur.thinking ? "harness-agent 工作中" : "harness-agent 在线";
-  const dot = h.cur.thinking ? "working" : "idle";
+/* ================= 顶栏：任务标题 + 语义状态 + 必要操作 ================= */
+function TitleBar({ h, sideOpen, onToggleSide }: { h: Harness; sideOpen: boolean; onToggleSide: () => void }) {
+  const b = statusBadge(h.cur.status);
   return (
     <div className="win-titlebar" data-tauri-drag-region>
       <div className="traffic">
@@ -86,9 +46,14 @@ function TitleBar({ h }: { h: Harness }) {
         <span className="t" onClick={() => winAction("minimize")} title="最小化"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2.5 5h5" /></svg></span>
         <span className="t" onClick={() => winAction("maximize")} title="全屏"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 3h4v4H3z" /></svg></span>
       </div>
-      <div className="win-title">DeepSeek Harness</div>
+      <button className="side-toggle" onClick={onToggleSide} title={sideOpen ? "收起侧栏" : "展开侧栏"} aria-label="切换侧栏">{Ic.panel}</button>
+      <div className="win-title">
+        <span className="task-title" title={h.cur.title}>{h.cur.title}</span>
+        <span className={"badge " + b.cls}>{b.label}</span>
+      </div>
       <div className="win-right">
-        <span className="pill"><span className={`pdot ${dot}`} /><span>{label}</span></span>
+        <button className="head-btn" onClick={h.togglePreview} title="预览面板（打开/收起）" aria-label="预览">{Ic.monitor}</button>
+        <button className="head-btn" onClick={() => h.setSettingsOpen(true)} title="设置" aria-label="设置">{Ic.gear}</button>
       </div>
     </div>
   );
@@ -102,51 +67,124 @@ function Sidebar({ h }: { h: Harness }) {
         <span className="sb-mark">{Ic.mark}</span>
         <span className="sb-name">Harness</span>
       </div>
-      <button className="btn btn-primary btn-new-chat" onClick={h.newChat}>{Ic.plus}新对话</button>
+      <button className="btn btn-accent btn-new-chat" onClick={h.newChat}>{Ic.plus}新建任务</button>
       <div className="side-search">
         <div className="search-input" onClick={() => h.setPaletteOpen(true)}>
           {Ic.search}
-          <input placeholder="搜索对话" readOnly />
+          <input placeholder="搜索任务" readOnly />
           <span className="kbd">⌘K</span>
         </div>
       </div>
-      <div className="side-label">对话</div>
+      <div className="side-label">任务</div>
       <div className="thread-list">
         {h.threads.map((t) => {
+          const last = t.msgs[t.msgs.length - 1];
           const b = statusBadge(t.status);
           return (
-            <div key={t.id} className={`thread-item${t.id === h.current ? " on" : ""}`} onClick={() => h.setCurrent(t.id)}>
-              <div className="tt">{t.title}</div>
-              <div className="tm"><span className={`badge ${b.cls}`}>{b.label}</span><span className="tst">{t.id}</span></div>
+            <div key={t.id} className={"thread-item" + (t.id === h.current ? " on" : "")} onClick={() => h.setCurrent(t.id)} title={t.title}>
+              <span className={"tstatus " + t.status} data-status={t.status} aria-label={b.label} />
+              <div className="t-main">
+                <div className="tt">{t.title}</div>
+                <div className="tm"><span className="tst">{last?.time ?? "刚刚"}</span></div>
+              </div>
             </div>
           );
         })}
       </div>
       <div className="side-agent">
-        <div className="agent-row">
-          <div className={`agent-orb${h.cur.thinking ? " busy" : ""}`}>{Ic.spark}</div>
-          <div className="meta">
-            <div className="who">harness-agent<span className="live-dot" title="在线" /></div>
-            <div className="state">{h.cur.thinking ? "思考中" : "在线，等你开口"}</div>
-          </div>
+        <div className={"agent-orb" + (h.cur.thinking ? " busy" : "")}>{Ic.spark}</div>
+        <div className="meta">
+          <div className="who">harness-agent</div>
+          <div className="state side-conn"><span className="pdot idle" />在线</div>
         </div>
       </div>
     </aside>
   );
 }
 
-/* ================= 消息行 ================= */
-function AgentHead() {
+/* ================= 消息头（弱化元信息） ================= */
+function AgentHead({ time }: { time?: string }) {
   return (
     <div className="a-head">
       <span className="a-mark">{Ic.spark}</span>
       <span className="a-name">harness-agent</span>
-      <span className="a-time">{new Date().toTimeString().slice(0, 5)}</span>
+      {time && <span className="a-time">{time}</span>}
     </div>
   );
 }
 
-function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number }) {
+/* ================= 工具调用组：默认折叠 ================= */
+function ToolGroup({ group, open, onToggle }: { group: Msg[]; open: boolean; onToggle: () => void }) {
+  const running = group.some((g) => g.toolStatus === "running");
+  const hasErr = group.some((g) => g.toolStatus === "error");
+  const names = Array.from(new Set(group.map((g) => g.toolName))).join("、");
+  const step = group.length + " 个步骤";
+  const copyText = async (txt: string) => { try { await navigator.clipboard.writeText(txt); } catch { /* ignore */ } };
+  return (
+    <div className={"tool-group" + (hasErr ? " err" : "") + (open ? " open" : "")}>
+      <button className="tool-summary" onClick={onToggle} aria-expanded={open}>
+        <span className="tg-status">{running ? <span className="tg-run"><i /><i /><i /></span> : hasErr ? <span className="tg-x">!</span> : Ic.check}</span>
+        <span className="tg-text">{running ? "正在执行 " + names + "…" : hasErr ? "部分工具执行失败 · " + names + " · " + step : "已完成 " + names + " · " + step}</span>
+        <span className={"tg-chev" + (open ? " up" : "")}>{Ic.chevD}</span>
+      </button>
+      {open && (
+        <div className="tool-items">
+          {group.map((g) => (
+            <div key={g.id} className={"tool-line mono" + (g.toolStatus === "done" ? " ok" : g.toolStatus === "error" ? " err" : "")}>
+              <div className="tl-head">
+                <span className="tl-name">{g.toolName}</span>
+                <span className="tl-args">{g.toolArgs}</span>
+                {g.toolStatus === "running" && <span className="tool-wait"><i /><i /><i /></span>}
+              </div>
+              {g.toolResult && (
+                <div className="tl-out">
+                  <pre>{g.toolResult}</pre>
+                  <button className="tl-copy" onClick={() => copyText(g.toolResult!)} title="复制输出">复制</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================= 成果卡：交付物 ================= */
+function DeliverableCard({ h, d }: { h: Harness; d: { path: string; name: string; t: number } }) {
+  const displayName = d.name.replace(/\.html?$/i, "") + " 预览";
+  const url = h.toolsCfg.url + "/preview/" + d.path;
+  const openPreview = () => {
+    const idx = h.wsPreviews.findIndex((x) => x.path === d.path);
+    h.setPreviewTab(h.PREVIEW_PAGES.length + (idx >= 0 ? idx : 0));
+    h.openPreview();
+  };
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(url); h.push("success", "已复制链接", url); }
+    catch { h.push("warn", "复制失败", "请手动复制地址栏链接"); }
+  };
+  return (
+    <div className="deliverable-card">
+      <div className="dc-head">
+        <span className="dc-title">{displayName}</span>
+        <span className="dc-status"><span className="dc-dot" />已就绪</span>
+      </div>
+      <div className="dc-desc">网页已生成并写入工作目录，可立即在预览面板打开试玩。</div>
+      <div className="dc-url mono">{url}</div>
+      <div className="dc-actions">
+        <button className="btn btn-primary" onClick={openPreview}>{Ic.monitor}打开预览</button>
+        <button className="btn btn-secondary" onClick={copyLink}>{Ic.clip}复制链接</button>
+      </div>
+      <details className="dc-help">
+        <summary>操作说明</summary>
+        <p>点击「打开预览」在右侧面板试玩；刷新按钮可重载最新改动。也可复制链接在系统浏览器中打开。</p>
+      </details>
+    </div>
+  );
+}
+
+/* ================= 消息行 ================= */
+function MsgRow({ m, h, mi }: { m: Msg; h: Harness; mi: number }) {
   if (m.role === "user") {
     return <div className="msg user"><div className="bubble">{m.chip ?? m.text}</div></div>;
   }
@@ -154,19 +192,12 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
     const opts = m.opts ?? [];
     return (
       <div className="msg agent">
-        <AgentHead />
+        <AgentHead time={m.time} />
         <div className="text"><Markdown text={m.text ?? ""} /></div>
         {opts.length > 0 && (
           <div className="chips">
             {opts.map((o, i) => (
-              <button
-                key={i}
-                className={`chip${m.picked === i ? " picked" : ""}${m.picked !== undefined && m.picked !== i ? " gone" : ""}`}
-                disabled={m.picked !== undefined}
-                onClick={() => h.pickChip(mi, i)}
-              >
-                {o}
-              </button>
+              <button key={i} className={"chip" + (m.picked === i ? " picked" : "") + (m.picked !== undefined && m.picked !== i ? " gone" : "")} disabled={m.picked !== undefined} onClick={() => h.pickChip(mi, i)}>{o}</button>
             ))}
           </div>
         )}
@@ -176,34 +207,12 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
   if (m.kind === "recall") {
     return (
       <div className="msg agent">
-        <AgentHead />
+        <AgentHead time={m.time} />
         <div className="text">{m.text}</div>
         <div className="mem-block">
           <div className="mem-label">来自记忆 · L1/L2 召回</div>
-          {(m.atoms ?? []).map((a, i) => (
-            <div className="mem-atom" key={i}>{a}</div>
-          ))}
+          {(m.atoms ?? []).map((a, i) => <div className="mem-atom" key={i}>{a}</div>)}
         </div>
-      </div>
-    );
-  }
-  if (m.kind === "tool") {
-    const done = m.toolStatus === "done";
-    const err = m.toolStatus === "error";
-    return (
-      <div className="msg agent tool-row">
-        <div className={"tool-line" + (done ? " ok" : "") + (err ? " err" : "")}>
-          <span className="tool-badge">{done ? Ic.check : Ic.spark}</span>
-          <span className="tool-name mono">{m.toolName}</span>
-          <span className="tool-args mono">{m.toolArgs}</span>
-          {m.toolStatus === "running" && <span className="tool-wait"><i /><i /><i /></span>}
-        </div>
-        {done && m.toolResult && (
-          <details className="tool-details">
-            <summary>结果</summary>
-            <pre>{m.toolResult}</pre>
-          </details>
-        )}
       </div>
     );
   }
@@ -211,14 +220,12 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
     const items = m.items ?? [];
     return (
       <div className="msg agent">
-        <AgentHead />
+        <AgentHead time={m.time} />
         <div className="text"><Markdown text={m.text ?? ""} /></div>
         {items.length > 0 && (
           <div className="plan-card">
             <div className="pt">计划</div>
-            {items.map((it, i) => (
-              <div className="pi" key={i}><b>{i + 1}</b><span>{it}</span></div>
-            ))}
+            {items.map((it, i) => <div className="pi" key={i}><b>{i + 1}</b><span>{it}</span></div>)}
             <div className="pa">
               <button className="btn btn-primary btn-sm" onClick={h.confirmPlan}>开始执行</button>
               <button className="btn btn-ghost btn-sm" onClick={h.reconsiderPlan}>改一改</button>
@@ -228,27 +235,60 @@ function MsgRow({ m, h, mi }: { m: import("./state").Msg; h: Harness; mi: number
       </div>
     );
   }
-  return <div className="msg agent"><AgentHead /><div className="text"><Markdown text={m.text ?? ""} /></div></div>;
+  return <div className="msg agent"><AgentHead time={m.time} /><div className="text"><Markdown text={m.text ?? ""} /></div></div>;
 }
 
-/* ================= 对话区 ================= */
+/* ================= 底部 Agent 操作台 ================= */
+function Console({ h, text, setText, send }: { h: Harness; text: string; setText: (v: string) => void; send: () => void }) {
+  return (
+    <div className="console-bar">
+      <div className="console">
+        <div className="console-row">
+          <button className="tool-btn" title="附件" aria-label="附件" onClick={() => h.push("info", "附件", "将打开文件选择器")}>{Ic.clip}</button>
+          <textarea id="chatInput" rows={1} placeholder="描述你希望 Agent 完成的任务……" value={text}
+            onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
+          />
+          <span className="mode-chip" title="当前执行模式">{Ic.spark}Agent · 自动执行</span>
+          <button className={h.cur.thinking ? "send-btn stop" : "send-btn"} onClick={h.cur.thinking ? h.stop : send} title={h.cur.thinking ? "停止" : "发送"} aria-label={h.cur.thinking ? "停止" : "发送"}>{h.cur.thinking ? <span className="stop-ico" /> : Ic.send}</button>
+        </div>
+        <div className="console-hint">
+          <span className="mono">Enter</span> 发送 · <span className="mono">Shift+Enter</span> 换行 · <span className="mono">⌘K</span> 命令
+          <span className="hint-right mono">{h.toolsCfg.workspace ?? "工具服务未连接"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================= 对话区：连续 Agent 任务时间线 ================= */
 function ChatView({ h }: { h: Harness }) {
   const [text, setText] = useState("");
+  const [openGroups, setOpenGroups] = useState<Record<number, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [h.cur.msgs.length, h.cur.thinking]);
+  }, [h.cur.msgs.length, h.cur.thinking, h.cur.deliverables.length]);
   const send = () => { h.sendMessage(text); setText(""); };
-  const b = statusBadge(h.cur.status);
+  const rows: ({ msg: Msg } | { group: Msg[] })[] = [];
+  {
+    const msgs = h.cur.msgs;
+    let i = 0;
+    while (i < msgs.length) {
+      if (msgs[i].kind === "tool") {
+        const g = [msgs[i]];
+        let j = i + 1;
+        while (j < msgs.length && msgs[j].kind === "tool") { g.push(msgs[j]); j++; }
+        rows.push({ group: g });
+        i = j;
+      } else {
+        rows.push({ msg: msgs[i] });
+        i++;
+      }
+    }
+  }
   return (
     <main className="chat">
-      <div className="chat-head">
-        <span className="cht">{h.cur.title}</span>
-        <span className={`badge ${b.cls}`}>{b.label}</span>
-        <span style={{ flex: 1 }} />
-        <button className="head-btn" onClick={h.togglePreview} title="预览">{Ic.monitor}</button>
-        <button className="head-btn" onClick={() => h.setSettingsOpen(true)} title="设置">{Ic.gear}</button>
-      </div>
       <div className="msg-scroll" ref={scrollRef}>
         <div className="msg-col">
           {h.cur.todos.length > 0 && (
@@ -262,36 +302,23 @@ function ChatView({ h }: { h: Harness }) {
               ))}
             </div>
           )}
-          {h.cur.msgs.map((m, i) => <MsgRow key={m.id} m={m} h={h} mi={i} />)}
+          {rows.map((r, idx) =>
+            "group" in r ? (
+              <ToolGroup key={"g" + idx} group={r.group} open={!!openGroups[idx]} onToggle={() => setOpenGroups((s) => ({ ...s, [idx]: !s[idx] }))} />
+            ) : (
+              <MsgRow key={r.msg.id} m={r.msg} h={h} mi={idx} />
+            )
+          )}
           {h.cur.thinking && (
             <div className="msg agent">
-              <div className="a-head">
-                <span className="a-mark">{Ic.spark}</span>
-                <span className="a-name">harness-agent</span>
-              </div>
-              <div className="thinking"><span className="tt">正在工作</span><i /><i /><i /></div>
+              <div className="a-head"><span className="a-mark">{Ic.spark}</span><span className="a-name">harness-agent</span></div>
+              <div className="thinking"><span className="tt">正在执行</span><i /><i /><i /></div>
             </div>
           )}
+          {h.cur.deliverables.length > 0 && <DeliverableCard h={h} d={h.cur.deliverables[h.cur.deliverables.length - 1]} />}
         </div>
       </div>
-      <div className="input-bar">
-        <div className="input-row">
-          <button className="tool-btn" title="附件" onClick={() => h.push("info", "附件", "将打开文件选择器")}>{Ic.clip}</button>
-          <textarea
-            id="chatInput"
-            rows={1}
-            placeholder="描述你想做的事，我可以直接动手：跑命令、读代码、写文件…"
-            value={text}
-            onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
-          />
-          <button className={h.cur.thinking ? "send-btn stop" : "send-btn"} onClick={h.cur.thinking ? h.stop : send} title={h.cur.thinking ? "停止" : "发送"}>{h.cur.thinking ? <span className="stop-ico" /> : Ic.send}</button>
-        </div>
-        <div className="input-hint">
-          <span className="mono">Enter</span> 发送 <span className="mono">Shift+Enter</span> 换行
-          <span className="mono" style={{ marginLeft: "auto" }}>⌘K 命令</span>
-        </div>
-      </div>
+      <Console h={h} text={text} setText={setText} send={send} />
     </main>
   );
 }
@@ -299,25 +326,18 @@ function ChatView({ h }: { h: Harness }) {
 /* ================= 右侧预览面板 ================= */
 function PreviewPane({ h }: { h: Harness }) {
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    if (h.previewOpen && !loaded) setLoaded(true);
-  }, [h.previewOpen, loaded]);
+  useEffect(() => { if (h.previewOpen && !loaded) setLoaded(true); }, [h.previewOpen, loaded]);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const spin = () => {
-    const btn = document.getElementById("reloadBtn");
-    if (!btn) return;
-    btn.classList.remove("reload-spin"); void (btn as HTMLElement).offsetWidth; btn.classList.add("reload-spin");
-  };
-  /* 标签 = 内置页 + 工作目录预览（agent 生成的 .html） */
+  const spin = () => { const btn = document.getElementById("reloadBtn"); if (!btn) return; btn.classList.remove("reload-spin"); void (btn as HTMLElement).offsetWidth; btn.classList.add("reload-spin"); };
   const tabs = [
     ...h.PREVIEW_PAGES.map((p) => ({ kind: "demo" as const, ...p })),
     ...h.wsPreviews.map((p) => ({ kind: "ws" as const, name: p.name, path: p.path, t: p.t, host: "harness.local" })),
   ];
   const cur = tabs[Math.min(h.previewTab, tabs.length - 1)] ?? tabs[0];
-  const src = cur.kind === "demo" ? cur.url : `${h.toolsCfg.url}/preview/${cur.path}?t=${cur.t}`;
-  const addr = cur.kind === "demo" ? cur.host : `${cur.host}/preview/${cur.path}`;
+  const src = cur.kind === "demo" ? cur.url : h.toolsCfg.url + "/preview/" + cur.path + "?t=" + cur.t;
+  const addr = cur.kind === "demo" ? cur.host : cur.host + "/preview/" + cur.path;
   return (
-    <aside id="previewPane" className={`preview-pane${h.previewOpen ? " open" : ""}`}>
+    <aside id="previewPane" className={"preview-pane" + (h.previewOpen ? " open" : "")}>
       <div className="pv-inner">
         <div className="pv-head">
           <span className="t">预览</span>
@@ -327,11 +347,9 @@ function PreviewPane({ h }: { h: Harness }) {
         <div className="browser-bar">
           <div className="tabs-row">
             {tabs.map((p, i) => (
-              <div key={p.kind === "demo" ? p.name : p.path} className={`btab${h.previewTab === i ? " on" : ""}`} onClick={() => h.setPreviewTab(i)}>
+              <div key={p.kind === "demo" ? p.name : p.path} className={"btab" + (h.previewTab === i ? " on" : "")} onClick={() => h.setPreviewTab(i)}>
                 <span className="bdot" />{p.name}
-                {p.kind === "ws" && (
-                  <button className="btab-x" title="关闭标签" onClick={(e) => { e.stopPropagation(); h.closeWsPreview(p.path); }}>×</button>
-                )}
+                {p.kind === "ws" && <button className="btab-x" title="关闭标签" onClick={(e) => { e.stopPropagation(); h.closeWsPreview(p.path); }}>×</button>}
               </div>
             ))}
           </div>
@@ -350,9 +368,7 @@ function PreviewPane({ h }: { h: Harness }) {
           </div>
         </div>
         <div className="preview-stage">
-          {loaded && (
-            <iframe ref={frameRef} id="previewFrame" className={`dev-${h.device}`} title="预览" src={src} />
-          )}
+          {loaded && <iframe ref={frameRef} id="previewFrame" className={"dev-" + h.device} title="预览" src={src} />}
         </div>
       </div>
     </aside>
@@ -361,10 +377,10 @@ function PreviewPane({ h }: { h: Harness }) {
 
 /* ================= 命令面板 ================= */
 const PALETTE = [
-  { name: "新对话", hint: "⌘N", icon: Ic.plus, run: (h: Harness) => { h.setPaletteOpen(false); h.newChat(); } },
+  { name: "新建任务", hint: "⌘N", icon: Ic.plus, run: (h: Harness) => { h.setPaletteOpen(false); h.newChat(); } },
   { name: "打开预览", hint: "", icon: Ic.monitor, run: (h: Harness) => { h.setPaletteOpen(false); h.openPreview(); } },
   { name: "打开设置", hint: "", icon: Ic.gear, run: (h: Harness) => { h.setPaletteOpen(false); h.setSettingsOpen(true); } },
-  { name: "清空已完成对话", hint: "", icon: Ic.x, run: (h: Harness) => { h.setPaletteOpen(false); h.clearDone(); } },
+  { name: "清空已完成任务", hint: "", icon: Ic.x, run: (h: Harness) => { h.setPaletteOpen(false); h.clearDone(); } },
   { name: "打开设计文档", hint: "", icon: Ic.doc, run: (h: Harness) => { h.setPaletteOpen(false); h.setPreviewTab(1); h.openPreview(); } },
 ];
 
@@ -386,12 +402,7 @@ function CommandPalette({ h }: { h: Harness }) {
         <div className="palette-list">
           {cmds.length === 0 && <div className="palette-empty">没有匹配的命令</div>}
           {cmds.map((c, i) => (
-            <div
-              key={c.name}
-              className={`palette-item${i === cur ? " sel" : ""}`}
-              onMouseMove={() => setSel(i)}
-              onClick={() => c.run(h)}
-            >
+            <div key={c.name} className={"palette-item" + (i === cur ? " sel" : "")} onMouseMove={() => setSel(i)} onClick={() => c.run(h)}>
               <span className="pi-icon">{c.icon}</span>
               <span className="pi-name">{c.name}</span>
               {c.hint && <span className="pi-hint">{c.hint}</span>}
@@ -471,7 +482,7 @@ function SettingsModal({ h }: { h: Harness }) {
         <div className="set-group">
           <div className="g-title">快捷键</div>
           <div className="set-row"><div className="lbl">Enter / Shift+Enter</div><div className="desc">发送 / 换行</div></div>
-          <div className="set-row"><div className="lbl">⌘K / ⌘N / Esc</div><div className="desc">命令面板 / 新对话 / 关闭浮层</div></div>
+          <div className="set-row"><div className="lbl">⌘K / ⌘N / Esc</div><div className="desc">命令面板 / 新建任务 / 关闭浮层</div></div>
           <div className="set-row"><div className="lbl">⌘W</div><div className="desc">关闭窗口</div></div>
         </div>
         <div className="sheet-foot"><button className="btn btn-primary" onClick={() => h.setSettingsOpen(false)}>完成</button></div>
@@ -493,12 +504,12 @@ function Toasts({ h }: { h: Harness }) {
   );
 }
 
-/* ================= App（修复 StrictMode 种子数据后重载） ================= */
+/* ================= App ================= */
 export default function App() {
   const h = useHarness();
-  const [phase, setPhase] = useState<"app">("app"); // 启动直进主界面，无欢迎页
+  /* 窄窗口默认收起侧栏（宽屏默认展开） */
+  const [sideOpen, setSideOpen] = useState(() => typeof window !== "undefined" && window.innerWidth > 920);
 
-  /* 启动直进主界面，无欢迎页 */
   useEffect(() => {
     if (isTauri) {
       import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
@@ -529,8 +540,8 @@ export default function App() {
 
   return (
     <>
-      <div id="window" className={phase === "app" ? "app-on" : ""}>
-        <TitleBar h={h} />
+      <div id="window" className={sideOpen ? "app-on side-open" : "app-on"}>
+        <TitleBar h={h} sideOpen={sideOpen} onToggleSide={() => setSideOpen((v) => !v)} />
         <div className="shell">
           <Sidebar h={h} />
           <ChatView h={h} />

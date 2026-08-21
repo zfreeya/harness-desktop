@@ -18,8 +18,8 @@ test.describe("启动与外壳", () => {
     // 输入框与发送键
     await expect(page.locator("#chatInput")).toBeVisible();
     await expect(page.locator(".send-btn")).toBeVisible();
-    // 标题栏在线胶囊
-    await expect(page.locator("#pillText, .win-right .pill")).toContainText("在线");
+    // 连接状态（唯一位置：侧栏底部）
+    await expect(page.locator(".side-conn")).toContainText("在线");
     expect(errors).toEqual([]);
   });
 });

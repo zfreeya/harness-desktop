@@ -51,8 +51,10 @@ test.describe("真实 Agent 工具流", () => {
     await page.locator("#chatInput").type("请用 bash 工具执行 echo agent-tool-ok，并把真实输出告诉我");
     await page.locator(".send-btn").click();
 
-    // 工具执行行出现（运行中 → 完成）
-    await expect(page.locator(".tool-line")).toBeVisible({ timeout: 90_000 });
+    // 工具调用组出现（默认折叠）；展开后可见原始命令与输出
+    await expect(page.locator(".tool-group")).toBeVisible({ timeout: 90_000 });
+    await page.locator(".tool-summary").first().click();
+    await expect(page.locator(".tool-line")).toBeVisible({ timeout: 10_000 });
     // 真实工具事件：bash + 输出含 agent-tool-ok
     await expect
       .poll(async () => page.evaluate(() => (window as any).__toolEvents?.length ?? 0), { timeout: 90_000 })
@@ -83,8 +85,10 @@ test.describe("真实 Agent 工具流", () => {
         message: "工作目录未出现内容含 harness-e2e 标记的文件",
       })
       .toBe(true);
-    // UI 上有 write 工具行
-    await expect(page.locator(".tool-line").first()).toBeVisible({ timeout: 60_000 });
+    // UI 上有 write 工具组（默认折叠；展开确认）
+    await expect(page.locator(".tool-group")).toBeVisible({ timeout: 60_000 });
+    await page.locator(".tool-summary").first().click();
+    await expect(page.locator(".tool-line").first()).toBeVisible({ timeout: 10_000 });
   });
 
   test("多轮对话：第二轮回复必须针对第二轮（回复不错位）", async ({ page }) => {
