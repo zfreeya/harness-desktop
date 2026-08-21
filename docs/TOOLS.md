@@ -40,6 +40,7 @@ bash 以工作目录为 cwd，可 cd 到任何本机路径（与 dsh 本地 bash
 | \`/glob\` | pattern, path? | 文件路径列表 |
 | \`/grep\` | pattern, path?, include? | 匹配行列表 |
 | \`/fetch\` | url | status / contentType / text |
+| \`/preview/<相对路径>\` (GET) | — | 服务工作目录内静态文件（html/css/js/图片等，no-store） |
 | \`/health\` (GET) | — | 状态与工作目录 |
 
 错误统一返回 \`{ "error": "..." }\`（HTTP 200），模型看到错误文本后可自行纠正重试。

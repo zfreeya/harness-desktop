@@ -283,6 +283,8 @@ input, select, textarea { font-family: inherit; }
 .btab .bdot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-ink-faint); }
 .btab.on { background: var(--color-surface-1); color: var(--color-ink); font-weight: 500; }
 .btab.on .bdot { background: var(--color-primary); }
+.btab-x { margin-left: 6px; width: 14px; height: 14px; border-radius: 50%; font-size: 11px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; color: var(--color-ink-faint); }
+.btab-x:hover { background: var(--color-hairline-strong); color: var(--color-ink); }
 .addr-row { display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; }
 .abtn { width: 28px; height: 28px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: var(--color-ink-muted); font-size: 13px; }
 .abtn:hover:not([disabled]) { background: var(--color-surface-1); color: var(--color-ink); }

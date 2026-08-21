@@ -177,6 +177,28 @@ const json = (res, code, obj) => {
   res.end(JSON.stringify(obj));
 };
 
+/* 预览静态服务：GET /preview/<相对路径>，仅工作目录内，no-store 便于改完即刷新 */
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/plain; charset=utf-8",
+};
+
 const routes = {
   "/bash": (body) => runBash(String(body.command ?? ""), body.timeoutMs),
   "/read": (body) => readFile(String(body.path ?? ""), body.offset, body.limit),
@@ -194,6 +216,25 @@ http.createServer(async (req, res) => {
     return;
   }
   if (req.method === "GET" && req.url === "/health") return json(res, 200, { status: "ok", workspace: WORKSPACE, pid: process.pid });
+  if (req.method === "GET" && req.url && new URL(req.url, "http://127.0.0.1").pathname.startsWith("/preview/")) {
+    // 用 pathname 解析：前端会带 ?t= 缓存戳，必须剥离 query
+    const pathname = new URL(req.url, "http://127.0.0.1").pathname;
+    const rel = decodeURIComponent(pathname.slice("/preview/".length));
+    try {
+      let abs = resolveInWorkspace(rel);
+      if (fs.statSync(abs).isDirectory()) abs = path.join(abs, "index.html");
+      const buf = fs.readFileSync(abs);
+      res.writeHead(200, {
+        "Content-Type": MIME[path.extname(abs).toLowerCase()] ?? "application/octet-stream",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-store",
+      });
+      res.end(buf);
+    } catch {
+      json(res, 404, { error: "预览文件不存在：" + rel });
+    }
+    return;
+  }
   if (req.method === "GET" && req.url === "/info") return json(res, 200, { workspace: WORKSPACE, cwd: WORKSPACE, tools: Object.keys(routes) });
   if (req.method === "POST" && routes[req.url]) {
     let raw = "";

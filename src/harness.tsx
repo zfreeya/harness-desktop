@@ -43,6 +43,7 @@ const SYSTEM_PROMPT = [
   "4. 用户明确要求输出 [PLAN] 计划或 [OPTIONS] 选项格式时必须严格遵守。",
   "5. 中文回复，简洁具体，引用真实输出，不要寒暄客套。",
   "6. 回复使用 Markdown 排版：要点用列表、重点加粗、代码与命令输出用代码块，让回答清晰易读。",
+  "7. 你创建的 .html 网页/游戏会自动出现在右侧预览面板（harness.local）并自动打开，完成后提示「已在右侧预览打开」；不要建议用户双击文件或手动起服务器。",
 ].join("\n");
 
 /* ================= 工具定义（对齐 deepseek-harness 关键工具） ================= */
@@ -101,6 +102,12 @@ function loadThreads(): Thread[] {
 /* 模块级初始化一次：避免 StrictMode 双调用造成 id 不一致（白屏根因） */
 const INITIAL_THREADS = loadThreads();
 
+/* 内置预览页（工作目录预览标签动态追加其后） */
+export const PREVIEW_PAGES = [
+  { name: "Harness 官网", url: "preview-demo.html", host: "harness.local" },
+  { name: "设计文档", url: "preview-docs.html", host: "docs.harness.local" },
+];
+
 export function useHarness() {
   const [threads, setThreads] = useState<Thread[]>(INITIAL_THREADS);
   const [current, setCurrentState] = useState<string>(() => {
@@ -108,6 +115,10 @@ export function useHarness() {
   });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTab, setPreviewTab] = useState(0);
+  /* 工作目录预览标签：agent 写出 .html 后自动加入并打开（harness.local） */
+  const [wsPreviews, setWsPreviews] = useState<{ path: string; name: string; t: number }[]>([]);
+  const wsPreviewsRef = useRef(wsPreviews);
+  wsPreviewsRef.current = wsPreviews;
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -269,6 +280,22 @@ export function useHarness() {
       const failed = Boolean(data && typeof data === "object" && "error" in data);
       toolEvents.current.push({ name, args, result: text, status: failed ? "error" : "done" });
       (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
+      /* HTML 产物 → 工作目录预览：新建自动打开面板，改动自动刷新 */
+      if (!failed && (name === "write" || name === "edit") && typeof args.path === "string" && /\.html?$/i.test(args.path)) {
+        const p = String(args.path);
+        const existed = wsPreviewsRef.current.some((x) => x.path === p);
+        setWsPreviews((list) => {
+          const t = Date.now();
+          return list.some((x) => x.path === p)
+            ? list.map((x) => (x.path === p ? { ...x, t } : x))
+            : [...list, { path: p, name: p.split("/").pop() ?? p, t }];
+        });
+        if (!existed) {
+          setPreviewTab(PREVIEW_PAGES.length + wsPreviewsRef.current.length);
+          setPreviewOpen(true);
+          push("success", "已在右侧预览打开", p);
+        }
+      }
       return { text, failed };
     } catch (e) {
       const stopped = stopRequestedRef.current;
@@ -405,6 +432,13 @@ export function useHarness() {
     stopCtrlRef.current?.abort();
   }, []);
 
+  /** 关闭一个工作目录预览标签；若关闭的是当前标签则切回首个内置页 */
+  const closeWsPreview = (p: string) => {
+    const idx = wsPreviewsRef.current.findIndex((x) => x.path === p);
+    setWsPreviews((list) => list.filter((x) => x.path !== p));
+    if (idx >= 0 && previewTab === PREVIEW_PAGES.length + idx) setPreviewTab(0);
+  };
+
   const switchThread = (id: string) => {
     setCurrentState(id);
     const t = threadsRef.current.find((x) => x.id === id);
@@ -444,11 +478,9 @@ export function useHarness() {
     model, setModel,
     memCfg, setMemCfg,
     toolsCfg, setToolsCfg,
+    wsPreviews, closeWsPreview,
     toasts, push,
-    PREVIEW_PAGES: [
-      { name: "Harness 官网", url: "preview-demo.html", host: "harness.local" },
-      { name: "设计文档", url: "preview-docs.html", host: "docs.harness.local" },
-    ],
+    PREVIEW_PAGES,
   };
 }
 

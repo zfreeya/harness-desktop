@@ -308,19 +308,30 @@ function PreviewPane({ h }: { h: Harness }) {
     if (!btn) return;
     btn.classList.remove("reload-spin"); void (btn as HTMLElement).offsetWidth; btn.classList.add("reload-spin");
   };
+  /* 标签 = 内置页 + 工作目录预览（agent 生成的 .html） */
+  const tabs = [
+    ...h.PREVIEW_PAGES.map((p) => ({ kind: "demo" as const, ...p })),
+    ...h.wsPreviews.map((p) => ({ kind: "ws" as const, name: p.name, path: p.path, t: p.t, host: "harness.local" })),
+  ];
+  const cur = tabs[Math.min(h.previewTab, tabs.length - 1)] ?? tabs[0];
+  const src = cur.kind === "demo" ? cur.url : `${h.toolsCfg.url}/preview/${cur.path}?t=${cur.t}`;
+  const addr = cur.kind === "demo" ? cur.host : `${cur.host}/preview/${cur.path}`;
   return (
     <aside id="previewPane" className={`preview-pane${h.previewOpen ? " open" : ""}`}>
       <div className="pv-inner">
         <div className="pv-head">
           <span className="t">预览</span>
-          <span className="pill mono">{h.PREVIEW_PAGES[h.previewTab].host}</span>
+          <span className="pill mono">{cur.host}</span>
           <button className="pv-close" onClick={h.closePreview} title="收起">{Ic.chevR}</button>
         </div>
         <div className="browser-bar">
           <div className="tabs-row">
-            {h.PREVIEW_PAGES.map((p, i) => (
-              <div key={i} className={`btab${h.previewTab === i ? " on" : ""}`} onClick={() => h.setPreviewTab(i)}>
+            {tabs.map((p, i) => (
+              <div key={p.kind === "demo" ? p.name : p.path} className={`btab${h.previewTab === i ? " on" : ""}`} onClick={() => h.setPreviewTab(i)}>
                 <span className="bdot" />{p.name}
+                {p.kind === "ws" && (
+                  <button className="btab-x" title="关闭标签" onClick={(e) => { e.stopPropagation(); h.closeWsPreview(p.path); }}>×</button>
+                )}
               </div>
             ))}
           </div>
@@ -330,7 +341,7 @@ function PreviewPane({ h }: { h: Harness }) {
               <button className="abtn" disabled title="前进">→</button>
               <button className="abtn" id="reloadBtn" onClick={() => { spin(); h.reloadPreview(); }} title="刷新">{Ic.reload}</button>
             </div>
-            <div className="address-bar">{Ic.lock}<span className="addr">{h.PREVIEW_PAGES[h.previewTab].host}</span></div>
+            <div className="address-bar">{Ic.lock}<span className="addr">{addr}</span></div>
             <div className="dev-switch" id="devSwitch">
               <button className={h.device === "desktop" ? "on" : ""} onClick={() => h.setDevice("desktop")} title="桌面">{Ic.monitor}</button>
               <button className={h.device === "tablet" ? "on" : ""} onClick={() => h.setDevice("tablet")} title="平板">{Ic.tablet}</button>
@@ -340,7 +351,7 @@ function PreviewPane({ h }: { h: Harness }) {
         </div>
         <div className="preview-stage">
           {loaded && (
-            <iframe ref={frameRef} id="previewFrame" className={`dev-${h.device}`} title="预览" src={h.PREVIEW_PAGES[h.previewTab].url} />
+            <iframe ref={frameRef} id="previewFrame" className={`dev-${h.device}`} title="预览" src={src} />
           )}
         </div>
       </div>
