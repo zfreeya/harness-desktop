@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Thread, Msg, Todo, newThread, greetingMsg, now } from "./state";
+import { Thread, Msg, Todo, Deliverable, ExecMode, EXEC_MODES, newThread, greetingMsg, now } from "./state";
 import {
   MemoryConfig, loadMemoryConfig, saveMemoryConfig,
   recallMemory, commitMemory, chatCompletion, LlmToolCall,
@@ -66,6 +66,7 @@ const LS_THREADS = "harness.threads.v1";
 const LS_CURRENT = "harness.current.v1";
 const LS_MODEL = "harness.model.v1";
 const LS_WS_PREVIEWS = "harness.wsPreviews.v1";
+const LS_EXEC_MODE = "harness.execMode.v1";
 const LS_REDUCE_MOTION = "harness.reduceMotion.v1";
 const LS_MAX_THREADS = 50;
 const LS_MAX_MSGS_PER_THREAD = 300;
@@ -82,12 +83,28 @@ function normalizeThread(t: Partial<Thread>): Thread {
     ...base, ...t,
     id: typeof t.id === "string" ? t.id : base.id,
     title: typeof t.title === "string" && t.title ? t.title : "新对话",
-    status: t.status === "working" || t.status === "done" || t.status === "error" || t.status === "waiting" ? t.status : "waiting",
+    status: normalizeStatus(t.status),
     thinking: false,
     msgs: Array.isArray(t.msgs) ? t.msgs.map((m) => ({ ...m, toolStatus: m.toolStatus === "running" ? "error" : m.toolStatus })) : [],
     todos: Array.isArray(t.todos) ? t.todos : [],
-    deliverables: Array.isArray(t.deliverables) ? t.deliverables : [],
+    deliverables: Array.isArray(t.deliverables)
+      ? t.deliverables.map((d) => ({ ...d, type: d.type ?? "文件", state: d.state ?? "running", t: d.t ?? Date.now() }))
+      : [],
+    updatedAt: typeof t.updatedAt === "number" ? t.updatedAt : Date.now(),
   };
+}
+
+function normalizeStatus(s?: string): import("./state").ThreadStatus {
+  switch (s) {
+    case "working": case "thinking": return "working";
+    case "awaiting-approval": return "awaiting-approval";
+    case "awaiting-input": case "waiting": case "idle": return "awaiting-input";
+    case "failed": case "error": return "failed";
+    case "ready": return "ready";
+    case "awaiting-review": case "done": return "awaiting-review";
+    case "confirmed": return "confirmed";
+    default: return "awaiting-input";
+  }
 }
 
 function loadThreads(): Thread[] {
@@ -150,6 +167,14 @@ export function useHarness() {
   };
   const [memCfg, setMemCfgState] = useState<MemoryConfig>(loadMemoryConfig);
   const [toolsCfg, setToolsCfgState] = useState<ToolsConfig>(loadToolsConfig);
+  const [mode, setModeState] = useState<ExecMode>(() => {
+    try {
+      const m = localStorage.getItem(LS_EXEC_MODE);
+      if (m === "auto" || m === "confirm" || m === "plan-only") return m;
+    } catch { /* ignore */ }
+    return "auto";
+  });
+  const setMode = (m: ExecMode) => { try { localStorage.setItem(LS_EXEC_MODE, m); } catch { /* ignore */ } setModeState(m); };
   const setMemCfg = (cfg: MemoryConfig) => { saveMemoryConfig(cfg); setMemCfgState(cfg); };
   const setToolsCfg = (cfg: ToolsConfig) => { saveToolsConfig(cfg); setToolsCfgState(cfg); };
   const { toasts, push } = useToasts();
@@ -189,12 +214,14 @@ export function useHarness() {
   const busyRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const stopCtrlRef = useRef<AbortController | null>(null);
+  const modeRef = useRef<ExecMode>(mode);
+  modeRef.current = mode;
 
   const patchThread = (id: string, fn: (t: Thread) => void) => {
     setThreads((ts) =>
       ts.map((t) => {
         if (t.id !== id) return t;
-        const copy: Thread = { ...t, msgs: [...t.msgs], todos: [...t.todos], deliverables: [...t.deliverables] };
+        const copy: Thread = { ...t, msgs: [...t.msgs], todos: [...t.todos], deliverables: [...t.deliverables], updatedAt: Date.now() };
         fn(copy);
         return copy;
       })
@@ -306,15 +333,15 @@ export function useHarness() {
             ? list.map((x) => (x.path === p ? { ...x, t } : x))
             : [...list, { path: p, name: base, t }];
         });
+        const dType = /\.html?$/i.test(p) ? "网页应用" : /\.(png|jpe?g|gif|svg|webp)$/i.test(p) ? "图片" : /\.md$/i.test(p) ? "文档" : "文件";
         patchThread(threadId, (tt) => {
           const has = tt.deliverables.some((d) => d.path === p);
           tt.deliverables = has
-            ? tt.deliverables.map((d) => (d.path === p ? { ...d, t: Date.now() } : d))
-            : [...tt.deliverables, { path: p, name: base, t: Date.now() }];
-          tt.title = base + " · 网页预览";
+            ? tt.deliverables.map((d) => (d.path === p ? { ...d, t: Date.now(), state: "running" } : d))
+            : [...tt.deliverables, { path: p, name: base, t: Date.now(), state: "running", type: dType }];
         });
         if (!existed) {
-          openDeliverable({ path: p, name: base, t: Date.now() });
+          openDeliverable({ path: p, name: base, t: Date.now(), state: "running", type: dType });
           push("success", "已在右侧预览打开", p);
         }
       }
@@ -353,7 +380,7 @@ export function useHarness() {
     // （症状：第二轮起的回复都在回答上一轮）。因此用本地快照构建历史。
     const snapshot: Thread = { ...t, title, msgs: [...t.msgs, userMsg], thinking: true, todos: [...t.todos] };
     pushMsg(t.id, userMsg);
-    patchThread(t.id, (tt) => { tt.title = title; tt.thinking = true; tt.status = "working"; });
+    patchThread(t.id, (tt) => { tt.thinking = true; tt.status = "working"; });
 
     let recallCtx = "";
     if (isFirstUser && memCfg.enabled) {
@@ -370,8 +397,14 @@ export function useHarness() {
       }
     }
 
+    const execMode = modeRef.current;
+    const execTools = execMode === "plan-only" ? [] : buildTools();
+    if (execMode === "plan-only") {
+      snapshot.msgs.unshift({ id: -1, role: "agent", kind: "text", text: "（当前模式：仅制定计划，不执行工具。请只输出计划/方案，明确步骤与预期结果。）" });
+    }
     const messages: { role: string; content: string; tool_calls?: LlmToolCall[]; tool_call_id?: string }[] =
       toLlmMessages(snapshot, recallCtx);
+    const prevDeliverableCount = snapshot.deliverables.length;
     let finalContent = "";
     let finalError = "";
     let stopped = false;
@@ -380,7 +413,7 @@ export function useHarness() {
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
         if (stopRequestedRef.current) { stopped = true; break; }
-        const res = await chatCompletion(memCfg, model, messages, buildTools());
+        const res = await chatCompletion(memCfg, model, messages, execTools);
         if (stopRequestedRef.current) { stopped = true; break; }
         if (res.error) { finalError = res.error; break; }
         const calls = res.tool_calls ?? [];
@@ -413,21 +446,25 @@ export function useHarness() {
 
     if (stopped) {
       patchThread(t.id, (tt) => {
-        tt.status = "waiting";
-        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "已停止。", time: now() });
+        tt.status = "awaiting-input";
+        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "已停止。可以继续输入，或说「继续执行」。", time: now() });
       });
       return;
     }
     if (finalError) {
       patchThread(t.id, (tt) => {
-        tt.status = "error";
-        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "连接模型失败：" + finalError + "（检查设置里的 MemoryProxy 地址与密钥）", time: now() });
+        tt.status = "failed";
+        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "执行失败：" + finalError + "。下一步：检查设置里的 MemoryProxy 地址与密钥后重试，或直接描述你的新需求。", time: now() });
       });
       return;
     }
     const p = parseReply(finalContent);
     patchThread(t.id, (tt) => {
-      tt.status = "done";
+      /* 状态由真实数据驱动：产出交付物→等待验收；计划→等待授权；选项/追问→等待输入 */
+      if (tt.deliverables.length > prevDeliverableCount) tt.status = "awaiting-review";
+      else if (p.kind === "plan") tt.status = "awaiting-approval";
+      else if (p.kind === "ask") tt.status = "awaiting-input";
+      else tt.status = "awaiting-input";
       tt.msgs.push({ id: Date.now(), role: "agent", kind: p.kind, text: p.text, opts: p.opts, items: p.items, time: now() });
     });
     /* 每轮对话写入真实记忆（L0） */
@@ -449,6 +486,19 @@ export function useHarness() {
   const confirmPlan = () => sendMessage("开始执行");
   const reconsiderPlan = () => sendMessage("我想修改计划");
 
+  /** 用户编辑任务标题（单一数据源：侧栏/顶栏共用 thread.title） */
+  const setTitle = useCallback((title: string) => {
+    const id = currentRef.current;
+    patchThread(id, (tt) => { tt.title = title.trim() || "新任务"; });
+  }, []);
+
+  /** 确认完成：等待验收 → 用户已确认 */
+  const confirmTask = useCallback(() => {
+    const id = currentRef.current;
+    patchThread(id, (tt) => { tt.status = "confirmed"; });
+    push("success", "已确认", "任务标记为「用户已确认」");
+  }, [push]);
+
   /** 停止当前进行中的 agent 循环（中断 LLM 等待与工具执行） */
   const stop = useCallback(() => {
     if (!busyRef.current) return;
@@ -456,8 +506,22 @@ export function useHarness() {
     stopCtrlRef.current?.abort();
   }, []);
 
+  /** 探测交付物预览服务真实状态：200→运行中；404→文件缺失；网络错误→服务不可用 */
+  const pingDeliverable = useCallback((path: string) => {
+    return fetch(toolsCfg.url + "/preview/" + path + "?t=" + Date.now(), { method: "GET" })
+      .then((r) => (r.ok ? "running" : "failed"))
+      .catch(() => "failed")
+      .then((state) => {
+        const st = state as "running" | "failed";
+        patchThread(currentRef.current, (tt) => {
+          tt.deliverables = tt.deliverables.map((d) => (d.path === path ? { ...d, state: st } : d));
+        });
+        return st;
+      });
+  }, [toolsCfg.url]);
+
   /** 打开交付物预览：标签缺失时自动重建（重启后线程成果卡仍可直达游戏） */
-  const openDeliverable = useCallback((d: { path: string; name: string; t: number }) => {
+  const openDeliverable = useCallback((d: Deliverable) => {
     let idx = wsPreviewsRef.current.findIndex((x) => x.path === d.path);
     if (idx < 0) {
       setWsPreviews((list) => (list.some((x) => x.path === d.path) ? list : [...list, { path: d.path, name: d.name, t: Date.now() }]));
@@ -465,7 +529,16 @@ export function useHarness() {
     }
     setPreviewTab(PREVIEW_PAGES.length + idx);
     setPreviewOpen(true);
-  }, []);
+    pingDeliverable(d.path);
+  }, [pingDeliverable]);
+
+  /** 重新启动 / 停止交付物预览服务（本地语义 + 真实探测） */
+  const setDeliverableState = useCallback((path: string, state: "running" | "stopped") => {
+    patchThread(currentRef.current, (tt) => {
+      tt.deliverables = tt.deliverables.map((d) => (d.path === path ? { ...d, state } : d));
+    });
+    if (state === "running") pingDeliverable(path);
+  }, [pingDeliverable]);
 
   /** 关闭一个工作目录预览标签；若关闭的是当前标签则切回首个内置页 */
   const closeWsPreview = (p: string) => {
@@ -489,7 +562,7 @@ export function useHarness() {
 
   const clearDone = () => {
     setThreads((ts) => {
-      const rest = ts.filter((t) => t.status !== "done");
+      const rest = ts.filter((t) => t.status !== "confirmed");
       return rest.length ? rest : [firstThread()];
     });
     push("success", "已清理");
@@ -498,6 +571,7 @@ export function useHarness() {
   return {
     threads, current, cur, setCurrent: switchThread,
     sendMessage, stop, pickChip, confirmPlan, reconsiderPlan, newChat, clearDone,
+    setTitle, confirmTask, mode, setMode, openDeliverable, pingDeliverable, setDeliverableState,
     reduceMotion, setReduceMotion: setReduceMotionPersist,
     previewOpen, previewTab, setPreviewTab, device, setDevice,
     setPreviewOpen: (v: boolean) => setPreviewOpen(v),
@@ -513,7 +587,7 @@ export function useHarness() {
     model, setModel,
     memCfg, setMemCfg,
     toolsCfg, setToolsCfg,
-    wsPreviews, closeWsPreview, openDeliverable,
+    wsPreviews, closeWsPreview,
     toasts, push,
     PREVIEW_PAGES,
   };

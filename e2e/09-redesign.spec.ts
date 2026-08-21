@@ -24,7 +24,7 @@ test.describe("Agent 工作台重设计", () => {
     await page.goto("/");
     // 顶栏：任务标题 + 语义状态
     await expect(page.locator(".task-title")).toHaveText("新任务");
-    await expect(page.locator(".win-titlebar .badge")).toHaveText("等待回复");
+    await expect(page.locator(".win-titlebar .badge")).toHaveText("等待用户输入");
     // 主区：问候语（可读、可操作提示）
     await expect(page.locator(".msg.agent .text").first()).toBeVisible();
     // 输入台：占位文案 + 发送按钮
@@ -59,10 +59,15 @@ test.describe("Agent 工作台重设计", () => {
     await page.locator(".send-btn").click();
     // 成果卡出现：标题/状态/主按钮/次按钮/操作说明
     await expect(page.locator(".deliverable-card")).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".dc-title")).toContainText("预览");
-    await expect(page.locator(".dc-status")).toContainText("已就绪");
+    await expect(page.locator(".dc-title")).toContainText("deliver-demo");
+    await expect(page.locator(".dc-status")).toContainText("运行中");
     await expect(page.locator(".dc-actions .btn-primary")).toContainText("打开预览");
-    await expect(page.locator(".dc-actions .btn-secondary")).toContainText("复制链接");
+    await expect(page.locator(".dc-actions .btn-secondary")).toHaveCount(2); // 在浏览器打开 / 查看文件
+    await expect(page.locator(".dc-actions .btn-secondary").first()).toContainText("在浏览器打开");
+    await expect(page.locator(".dl-more-btn")).toBeVisible();
+    await page.locator(".dl-more-btn").click();
+    await expect(page.locator(".dl-menu button", { hasText: "复制链接" })).toBeVisible();
+    await expect(page.locator(".dl-menu button", { hasText: "重新启动服务" })).toBeVisible();
     await expect(page.locator(".dc-help summary")).toContainText("操作说明");
     // 主按钮 → 预览面板打开并指向该文件
     await page.locator(".dc-actions .btn-primary").click();

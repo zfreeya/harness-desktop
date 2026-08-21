@@ -444,3 +444,107 @@ select.inp {
   .msg-col { padding: 0 20px; }
   .task-title { max-width: 30vw; }
 }
+
+
+/* ============ 任务摘要区 ============ */
+.task-summary {
+  background: var(--color-surface-1); border: 1px solid var(--color-hairline); border-radius: var(--radius-md);
+  padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-hover);
+  transition: padding 0.2s;
+}
+.task-summary.shrunk { padding: 8px 16px; }
+.ts-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.ts-row.ts-sub { gap: 18px; }
+.ts-label { font-size: 10.5px; color: var(--color-ink-subtle); letter-spacing: 0.4px; margin-right: 8px; }
+.ts-value { font-size: 13px; font-weight: 600; color: var(--color-ink); }
+.ts-value.ok { color: var(--color-success-strong); }
+.ts-value.err { color: var(--color-error-strong); }
+.ts-sub .ts-label { margin-right: 6px; }
+.ts-sub .ts-value { font-size: 12px; font-weight: 500; }
+.ts-action { margin-left: auto; }
+.task-summary.shrunk .ts-sub { display: none; }
+
+/* ============ 执行分组 ============ */
+.episode { display: flex; flex-direction: column; gap: 20px; }
+.episode > .msg:first-child { animation: none; }
+.tool-group.past { opacity: 0.72; }
+.tool-group.past .tool-summary { background: var(--color-surface-2); }
+
+/* ============ 成果卡 v2 ============ */
+.deliverable-card { background: var(--color-surface-1); border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); padding: 16px 18px; box-shadow: var(--shadow-hover); display: flex; flex-direction: column; gap: 8px; }
+.deliverable-card.dl-stopped { border-color: var(--color-hairline-strong); }
+.deliverable-card.dl-failed { border-color: var(--color-error-strong); background: var(--color-error-soft); }
+.dc-head { display: flex; align-items: flex-start; gap: 10px; }
+.dc-title { font-size: 15px; font-weight: 650; letter-spacing: -0.2px; }
+.dc-type { font-size: 11px; color: var(--color-ink-subtle); margin-top: 2px; }
+.dc-status { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px; color: var(--color-ink-muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.dc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-ink-faint); }
+.dc-dot.on { background: var(--color-success-strong); box-shadow: 0 0 0 3px var(--color-success-soft); }
+.dc-dot.off { background: var(--color-error-strong); }
+.dc-desc { font-size: 12.5px; color: var(--color-ink-muted); line-height: 1.6; }
+.dc-url { font-size: 11px; color: var(--color-ink-subtle); background: var(--color-surface-2); border: 1px solid var(--color-hairline); border-radius: 6px; padding: 6px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; flex-wrap: wrap; }
+.dl-more { position: relative; }
+.dl-more-btn { width: 28px; height: 28px; padding: 0; justify-content: center; }
+.dl-more-btn svg { width: 14px; height: 14px; }
+.dl-menu { position: absolute; right: 0; top: calc(100% + 4px); background: var(--color-surface-1); border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-popover); display: flex; flex-direction: column; padding: 4px; min-width: 130px; z-index: 30; }
+.dl-menu button { text-align: left; font-size: 12px; padding: 7px 10px; border-radius: 6px; color: var(--color-ink-muted); }
+.dl-menu button:hover { background: var(--color-surface-2); color: var(--color-ink); }
+.dc-help { font-size: 12px; color: var(--color-ink-muted); }
+.dc-help summary { cursor: pointer; user-select: none; font-size: 11.5px; color: var(--color-ink-subtle); }
+.dc-help p { margin: 6px 0 0; line-height: 1.6; }
+
+/* ============ 验收动作 chips ============ */
+.accept-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--color-hairline); }
+.accept-chip {
+  font-size: 12px; font-weight: 500; color: var(--color-ink-muted); background: var(--color-surface-2);
+  border: 1px solid var(--color-hairline); border-radius: var(--radius-full); padding: 5px 12px; transition: all 0.12s;
+}
+.accept-chip:hover { border-color: var(--color-primary); color: var(--color-primary-strong); background: var(--color-primary-soft); }
+.accept-chip.primary { background: var(--color-primary); color: var(--color-on-accent); border-color: transparent; }
+.accept-chip.primary:hover { background: var(--color-primary-strong); }
+
+/* ============ 执行模式选择 ============ */
+.mode-wrap { position: relative; align-self: center; }
+.mode-chip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 500; cursor: pointer;
+  color: var(--color-ink-muted); background: var(--color-surface-2); border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-full); padding: 4px 10px; white-space: nowrap; transition: border-color 0.12s, color 0.12s;
+}
+.mode-chip:hover { border-color: var(--color-primary); color: var(--color-ink); }
+.mode-chip svg { width: 9px; height: 9px; color: var(--color-primary); }
+.mode-caret { display: inline-flex; }
+.mode-caret svg { width: 9px; height: 9px; color: var(--color-ink-faint); }
+.mode-pop { position: absolute; right: 0; bottom: calc(100% + 6px); background: var(--color-surface-1); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); padding: 6px; min-width: 220px; z-index: 40; display: flex; flex-direction: column; gap: 2px; }
+.mode-item { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 10px; border-radius: var(--radius-sm); }
+.mode-item:hover { background: var(--color-surface-2); }
+.mode-item.sel { background: var(--color-primary-soft); }
+.mode-name { font-size: 12.5px; font-weight: 600; color: var(--color-ink); }
+.mode-item.sel .mode-name { color: var(--color-primary-strong); }
+.mode-desc { font-size: 11px; color: var(--color-ink-muted); line-height: 1.45; }
+
+/* ============ 顶栏与预览状态 ============ */
+.head-btn.on { background: var(--color-primary-soft); color: var(--color-primary-strong); }
+.title-edit { font-size: 13.5px; font-weight: 600; border: 1px solid var(--color-primary); border-radius: 6px; padding: 2px 8px; outline: none; background: var(--color-surface-1); color: var(--color-ink); width: 46vw; max-width: 460px; }
+.btn-new-chat { background: var(--color-primary); color: var(--color-on-accent); }
+.btn-new-chat:hover { background: var(--color-primary-strong); }
+
+/* 预览面板 loading / error */
+.pv-stage-inner { position: relative; width: 100%; height: 100%; min-height: 400px; }
+.pv-stage-inner iframe { width: 100%; height: 100%; }
+.pv-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: var(--color-ink-muted); background: var(--color-surface-1); z-index: 2; }
+.pv-loading::after { content: ""; width: 14px; height: 14px; margin-left: 8px; border: 2px solid var(--color-hairline-strong); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+.pv-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--color-error-soft); z-index: 2; padding: 24px; text-align: center; }
+.pv-err-msg { font-size: 12.5px; color: var(--color-error-strong); line-height: 1.6; }
+
+/* 主阅读列约束：无预览时 880 居中；有预览时聊天列保持可读宽度（按视口分级） */
+.msg-col { max-width: 880px; }
+#window.pv-open .msg-col { max-width: 100%; }
+#window.pv-open .chat { min-width: 0; flex: 1 1 0; }
+@media (min-width: 1440px) { #window.pv-open .chat { min-width: 520px; } }
+@media (min-width: 1200px) and (max-width: 1439px) { #window.pv-open .chat { min-width: 440px; } }
+.preview-pane.open { width: min(40vw, 500px); }
+.pv-inner { width: min(40vw, 500px); }
+
+/* 输入区提示进一步弱化 */
+.console-hint { opacity: 0.8; }
