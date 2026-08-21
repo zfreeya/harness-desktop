@@ -65,6 +65,7 @@ function buildTools() {
 const LS_THREADS = "harness.threads.v1";
 const LS_CURRENT = "harness.current.v1";
 const LS_MODEL = "harness.model.v1";
+const LS_WS_PREVIEWS = "harness.wsPreviews.v1";
 const LS_REDUCE_MOTION = "harness.reduceMotion.v1";
 const LS_MAX_THREADS = 50;
 const LS_MAX_MSGS_PER_THREAD = 300;
@@ -116,10 +117,23 @@ export function useHarness() {
   });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTab, setPreviewTab] = useState(0);
-  /* 工作目录预览标签：agent 写出 .html 后自动加入并打开（harness.local） */
-  const [wsPreviews, setWsPreviews] = useState<{ path: string; name: string; t: number }[]>([]);
+  /* 工作目录预览标签：agent 写出 .html 后自动加入并打开（harness.local）；
+   * 持久化：重启 App 后标签仍在，成果卡「打开预览」不会落到 mock 页 */
+  const [wsPreviews, setWsPreviews] = useState<{ path: string; name: string; t: number }[]>(() => {
+    try {
+      const raw = localStorage.getItem(LS_WS_PREVIEWS);
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) return list.filter((x) => x && typeof x.path === "string").slice(0, 20);
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
   const wsPreviewsRef = useRef(wsPreviews);
   wsPreviewsRef.current = wsPreviews;
+  useEffect(() => {
+    try { localStorage.setItem(LS_WS_PREVIEWS, JSON.stringify(wsPreviews.slice(0, 20))); } catch { /* ignore */ }
+  }, [wsPreviews]);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -300,8 +314,7 @@ export function useHarness() {
           tt.title = base + " · 网页预览";
         });
         if (!existed) {
-          setPreviewTab(PREVIEW_PAGES.length + wsPreviewsRef.current.length);
-          setPreviewOpen(true);
+          openDeliverable({ path: p, name: base, t: Date.now() });
           push("success", "已在右侧预览打开", p);
         }
       }
@@ -443,6 +456,17 @@ export function useHarness() {
     stopCtrlRef.current?.abort();
   }, []);
 
+  /** 打开交付物预览：标签缺失时自动重建（重启后线程成果卡仍可直达游戏） */
+  const openDeliverable = useCallback((d: { path: string; name: string; t: number }) => {
+    let idx = wsPreviewsRef.current.findIndex((x) => x.path === d.path);
+    if (idx < 0) {
+      setWsPreviews((list) => (list.some((x) => x.path === d.path) ? list : [...list, { path: d.path, name: d.name, t: Date.now() }]));
+      idx = wsPreviewsRef.current.length;
+    }
+    setPreviewTab(PREVIEW_PAGES.length + idx);
+    setPreviewOpen(true);
+  }, []);
+
   /** 关闭一个工作目录预览标签；若关闭的是当前标签则切回首个内置页 */
   const closeWsPreview = (p: string) => {
     const idx = wsPreviewsRef.current.findIndex((x) => x.path === p);
@@ -489,7 +513,7 @@ export function useHarness() {
     model, setModel,
     memCfg, setMemCfg,
     toolsCfg, setToolsCfg,
-    wsPreviews, closeWsPreview,
+    wsPreviews, closeWsPreview, openDeliverable,
     toasts, push,
     PREVIEW_PAGES,
   };

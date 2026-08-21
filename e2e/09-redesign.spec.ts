@@ -72,6 +72,27 @@ test.describe("Agent 工作台重设计", () => {
     await expect(frame.locator("#dv")).toHaveText("成果卡验证", { timeout: 60_000 });
   });
 
+  test("重启后成果卡打开预览直达游戏（不落到 mock 页）", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("#chatInput").click();
+    await page.locator("#chatInput").type(
+      "请用 write 工具创建文件 persist-preview.html，内容为：<!DOCTYPE html><html><body><h1 id=\"pp\">持久化预览</h1></body></html>"
+    );
+    await page.locator(".send-btn").click();
+    await expect(page.locator(".deliverable-card")).toBeVisible({ timeout: 90_000 });
+    // 模拟重启：刷新后线程与预览标签都保留
+    await page.reload();
+    await expect(page.locator(".deliverable-card")).toBeVisible();
+    // 点成果卡「打开预览」→ 必须直达 persist-preview.html，而不是 mock 内置页
+    await page.locator(".dc-actions .btn-primary").click();
+    await expect(page.locator("#previewPane")).toHaveClass(/open/);
+    const src = await page.locator("#previewFrame").getAttribute("src");
+    expect(src).toContain("/preview/persist-preview.html");
+    expect(src).not.toContain("preview-demo.html");
+    const frame = page.frameLocator("#previewFrame");
+    await expect(frame.locator("#pp")).toHaveText("持久化预览", { timeout: 60_000 });
+  });
+
   test("窄窗口侧栏自动折叠，可手动展开", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 700 });
     await page.goto("/");

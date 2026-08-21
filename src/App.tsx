@@ -154,11 +154,7 @@ function ToolGroup({ group, open, onToggle }: { group: Msg[]; open: boolean; onT
 function DeliverableCard({ h, d }: { h: Harness; d: { path: string; name: string; t: number } }) {
   const displayName = d.name.replace(/\.html?$/i, "") + " 预览";
   const url = h.toolsCfg.url + "/preview/" + d.path;
-  const openPreview = () => {
-    const idx = h.wsPreviews.findIndex((x) => x.path === d.path);
-    h.setPreviewTab(h.PREVIEW_PAGES.length + (idx >= 0 ? idx : 0));
-    h.openPreview();
-  };
+  const openPreview = () => h.openDeliverable(d);
   const copyLink = async () => {
     try { await navigator.clipboard.writeText(url); h.push("success", "已复制链接", url); }
     catch { h.push("warn", "复制失败", "请手动复制地址栏链接"); }

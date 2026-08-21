@@ -31,8 +31,10 @@ test.describe("桌面端优化专项", () => {
     await page.locator(".send-btn").click({ force: true }).catch(() => undefined);
     // 用户气泡只有一条（第二条被同步拦截）
     await expect(page.locator(".msg.user")).toHaveCount(1);
-    // 回复正常到达
-    await expect(page.locator(".msg.agent .text").last()).toContainText(/收到|好|是|OK/i, { timeout: 90_000 });
+    // 回复正常到达（不依赖模型措辞，只要求真实回复且非错误）
+    await expect(page.locator(".msg.agent .text").last()).toBeVisible({ timeout: 90_000 });
+    const body = await page.locator(".msg-col").innerText();
+    expect(body).not.toContain("连接模型失败");
   });
 
   test("停止按钮真实中断长任务", async ({ page }) => {
