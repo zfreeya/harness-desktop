@@ -417,3 +417,12 @@ select.inp {
 .todo-item.completed .todo-text { color: var(--color-ink-faint); text-decoration: line-through; }
 .todo-item.in_progress .todo-check { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
 .todo-item.in_progress .todo-text { color: var(--color-ink); font-weight: 500; }
+
+/* ============ Toast 分类与停止按钮 ============ */
+.toast.info { box-shadow: var(--shadow-toast); }
+.toast.success { background: var(--color-success-strong); }
+.toast.warn { background: #8a6d1f; }
+.toast.error { background: var(--color-error-strong); }
+.send-btn.stop { background: var(--color-error-strong); }
+.send-btn.stop:hover { background: var(--color-ink); }
+.stop-ico { width: 11px; height: 11px; border-radius: 2.5px; background: #fff; display: inline-block; }

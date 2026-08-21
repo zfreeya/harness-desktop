@@ -62,6 +62,10 @@ function buildTools() {
 /* ================= 真实 LLM + 真实工具引擎 hook ================= */
 const LS_THREADS = "harness.threads.v1";
 const LS_CURRENT = "harness.current.v1";
+const LS_MODEL = "harness.model.v1";
+const LS_REDUCE_MOTION = "harness.reduceMotion.v1";
+const LS_MAX_THREADS = 50;
+const LS_MAX_MSGS_PER_THREAD = 300;
 
 function firstThread(): Thread {
   const t = newThread();
@@ -106,12 +110,27 @@ export function useHarness() {
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [model, setModel] = useState("deepseek-v4-pro");
+  const [model, setModelState] = useState<string>(() => {
+    try { return localStorage.getItem(LS_MODEL) || "deepseek-v4-pro"; } catch { return "deepseek-v4-pro"; }
+  });
+  const setModel = (m: string) => { try { localStorage.setItem(LS_MODEL, m); } catch { /* ignore */ } setModelState(m); };
+  const [reduceMotion, setReduceMotion] = useState<boolean>(() => {
+    try { return localStorage.getItem(LS_REDUCE_MOTION) === "1"; } catch { return false; }
+  });
+  const setReduceMotionPersist = (v: boolean) => {
+    try { localStorage.setItem(LS_REDUCE_MOTION, v ? "1" : "0"); } catch { /* ignore */ }
+    setReduceMotion(v);
+  };
   const [memCfg, setMemCfgState] = useState<MemoryConfig>(loadMemoryConfig);
   const [toolsCfg, setToolsCfgState] = useState<ToolsConfig>(loadToolsConfig);
   const setMemCfg = (cfg: MemoryConfig) => { saveMemoryConfig(cfg); setMemCfgState(cfg); };
   const setToolsCfg = (cfg: ToolsConfig) => { saveToolsConfig(cfg); setToolsCfgState(cfg); };
   const { toasts, push } = useToasts();
+
+  /* 减弱动态效果：持久化 + 应用到文档根类 */
+  useEffect(() => {
+    document.documentElement.classList.toggle("reduce-motion", reduceMotion);
+  }, [reduceMotion]);
 
   /* 工具服务工作目录展示 */
   useEffect(() => {
@@ -120,9 +139,15 @@ export function useHarness() {
     }).catch(() => undefined);
   }, [toolsCfg.url]);
 
-  /* 会话持久化：每次变化落 localStorage（重开 App 不丢对话） */
+  /* 会话持久化：每次变化落 localStorage（重开 App 不丢对话），带容量上限防止配额打满 */
   useEffect(() => {
-    try { localStorage.setItem(LS_THREADS, JSON.stringify(threads)); } catch { /* ignore */ }
+    try {
+      const capped = threads.slice(0, LS_MAX_THREADS).map((t) => ({
+        ...t,
+        msgs: t.msgs.slice(-LS_MAX_MSGS_PER_THREAD),
+      }));
+      localStorage.setItem(LS_THREADS, JSON.stringify(capped));
+    } catch { /* ignore */ }
   }, [threads]);
   useEffect(() => {
     try { localStorage.setItem(LS_CURRENT, current); } catch { /* ignore */ }
@@ -133,6 +158,10 @@ export function useHarness() {
   threadsRef.current = threads;
   const currentRef = useRef(current);
   currentRef.current = current;
+  /* 同步竞态防护：同一时刻只允许一轮 agent 循环（React 状态更新是异步的，靠 ref 兜底） */
+  const busyRef = useRef(false);
+  const stopRequestedRef = useRef(false);
+  const stopCtrlRef = useRef<AbortController | null>(null);
 
   const patchThread = (id: string, fn: (t: Thread) => void) => {
     setThreads((ts) =>
@@ -204,38 +233,68 @@ export function useHarness() {
 
   /* ---- 工具执行（tools-server + 本地 todo_write） ---- */
   const toolEvents = useRef<{ name: string; args: unknown; result: string; status: string }[]>([]);
-  const execTool = async (name: string, args: Record<string, unknown>, threadId: string): Promise<string> => {
+  const lastToolErrorToastAt = useRef(0);
+  /** 组合超时与用户停止信号的 AbortSignal */
+  const anySignal = (timeoutMs: number): AbortSignal => {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(new DOMException("超时", "TimeoutError")), timeoutMs);
+    const onStop = () => ac.abort(stopCtrlRef.current?.signal.reason ?? new DOMException("已停止", "AbortError"));
+    stopCtrlRef.current?.signal.addEventListener("abort", onStop, { once: true });
+    ac.signal.addEventListener("abort", () => {
+      clearTimeout(t);
+      stopCtrlRef.current?.signal.removeEventListener("abort", onStop);
+    }, { once: true });
+    return ac.signal;
+  };
+  /** 执行一个工具调用；返回文本与是否失败（网络失败或服务返回业务错误） */
+  const execTool = async (name: string, args: Record<string, unknown>, threadId: string): Promise<{ text: string; failed: boolean }> => {
     if (name === "todo_write") {
       const todos = Array.isArray(args.todos) ? (args.todos as Todo[]) : [];
       patchThread(threadId, (t) => { t.todos = todos.slice(0, 12); });
-      return JSON.stringify({ ok: true, todos: todos.slice(0, 12) });
+      const text = JSON.stringify({ ok: true, todos: todos.slice(0, 12) });
+      toolEvents.current.push({ name, args, result: text, status: "done" });
+      (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
+      return { text, failed: false };
     }
     try {
       const res = await fetch(toolsCfg.url + "/" + name, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(args),
-        signal: AbortSignal.timeout(180000),
+        signal: anySignal(180000),
       });
       const data = await res.json();
       const text = JSON.stringify(data);
-      toolEvents.current.push({ name, args, result: text, status: "done" });
+      const failed = Boolean(data && typeof data === "object" && "error" in data);
+      toolEvents.current.push({ name, args, result: text, status: failed ? "error" : "done" });
       (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
-      return text;
+      return { text, failed };
     } catch (e) {
-      const text = JSON.stringify({ error: "工具服务不可达：" + String(e) });
+      const stopped = stopRequestedRef.current;
+      const text = JSON.stringify({ error: stopped ? "已停止" : "工具服务不可达：" + String(e) });
       toolEvents.current.push({ name, args, result: text, status: "error" });
       (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
-      return text;
+      if (!stopped) {
+        const n = Date.now();
+        if (n - lastToolErrorToastAt.current > 5000) {
+          lastToolErrorToastAt.current = n;
+          push("error", "工具服务不可达", "检查设置里的工具服务地址，或确认服务已启动");
+        }
+      }
+      return { text, failed: true };
     }
   };
 
   /* ---- 核心：发送消息（真实 LLM + 真实工具循环 + 真实记忆） ---- */
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
+    // 同步竞态防护：React 状态更新是异步的，连续快速发送会同时进入两轮循环
+    if (busyRef.current) { push("warn", "正在工作", "稍等它完成再发下一条"); return; }
+    busyRef.current = true;
+    stopRequestedRef.current = false;
+    stopCtrlRef.current = new AbortController();
     const t = threadsRef.current.find((x) => x.id === currentRef.current);
-    if (!t) return;
-    if (t.thinking) { push("warn", "正在工作", "稍等它完成再发下一条"); return; }
+    if (!t) { busyRef.current = false; return; }
     const isFirstUser = !t.msgs.some((m) => m.role === "user");
     const title = isFirstUser ? text.slice(0, 18) : t.title;
     const userMsg: Msg = { id: Date.now(), role: "user", text, time: now() };
@@ -244,7 +303,7 @@ export function useHarness() {
     // （症状：第二轮起的回复都在回答上一轮）。因此用本地快照构建历史。
     const snapshot: Thread = { ...t, title, msgs: [...t.msgs, userMsg], thinking: true, todos: [...t.todos] };
     pushMsg(t.id, userMsg);
-    patchThread(t.id, (tt) => { tt.title = title; tt.thinking = true; });
+    patchThread(t.id, (tt) => { tt.title = title; tt.thinking = true; tt.status = "thinking"; });
 
     let recallCtx = "";
     if (isFirstUser && memCfg.enabled) {
@@ -265,16 +324,20 @@ export function useHarness() {
       toLlmMessages(snapshot, recallCtx);
     let finalContent = "";
     let finalError = "";
+    let stopped = false;
     const MAX_STEPS = 12;
 
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
+        if (stopRequestedRef.current) { stopped = true; break; }
         const res = await chatCompletion(memCfg, model, messages, buildTools());
+        if (stopRequestedRef.current) { stopped = true; break; }
         if (res.error) { finalError = res.error; break; }
         const calls = res.tool_calls ?? [];
         if (calls.length === 0) { finalContent = res.content; break; }
         messages.push({ role: "assistant", content: res.content, tool_calls: calls });
         for (const call of calls) {
+          if (stopRequestedRef.current) { stopped = true; break; }
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* 保持空对象 */ }
           const msgId = Date.now() + Math.floor(Math.random() * 1000);
@@ -284,16 +347,26 @@ export function useHarness() {
             toolArgs: JSON.stringify(args).slice(0, 400),
             toolStatus: "running",
           });
-          const result = await execTool(call.function.name, args, t.id);
-          patchMsg(t.id, msgId, (m) => ({ ...m, toolStatus: "done", toolResult: result.slice(0, 4000) }));
+          const { text: result, failed } = await execTool(call.function.name, args, t.id);
+          // 停止时工具可能被中断：行状态仍按失败标记
+          patchMsg(t.id, msgId, (m) => ({ ...m, toolStatus: failed ? "error" : "done", toolResult: result.slice(0, 4000) }));
           messages.push({ role: "tool", tool_call_id: call.id, content: result.slice(0, 8000) });
         }
+        if (stopped) break;
       }
-      if (!finalContent && !finalError) finalContent = "已经完成了工具调用。";
+      if (!finalContent && !finalError && !stopped) finalContent = "已经完成了工具调用。";
     } finally {
-      patchThread(t.id, (tt) => { tt.thinking = false; });
+      busyRef.current = false;
+      stopCtrlRef.current = null;
+      patchThread(t.id, (tt) => { tt.thinking = false; tt.status = "idle"; });
     }
 
+    if (stopped) {
+      patchThread(t.id, (tt) => {
+        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "已停止。", time: now() });
+      });
+      return;
+    }
     if (finalError) {
       patchThread(t.id, (tt) => {
         tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "连接模型失败：" + finalError + "（检查设置里的 MemoryProxy 地址与密钥）", time: now() });
@@ -302,6 +375,7 @@ export function useHarness() {
     }
     const p = parseReply(finalContent);
     patchThread(t.id, (tt) => {
+      tt.status = "done";
       tt.msgs.push({ id: Date.now(), role: "agent", kind: p.kind, text: p.text, opts: p.opts, items: p.items, time: now() });
     });
     /* 每轮对话写入真实记忆（L0） */
@@ -322,6 +396,13 @@ export function useHarness() {
 
   const confirmPlan = () => sendMessage("开始执行");
   const reconsiderPlan = () => sendMessage("我想修改计划");
+
+  /** 停止当前进行中的 agent 循环（中断 LLM 等待与工具执行） */
+  const stop = useCallback(() => {
+    if (!busyRef.current) return;
+    stopRequestedRef.current = true;
+    stopCtrlRef.current?.abort();
+  }, []);
 
   const switchThread = (id: string) => {
     setCurrentState(id);
@@ -346,7 +427,8 @@ export function useHarness() {
 
   return {
     threads, current, cur, setCurrent: switchThread,
-    sendMessage, pickChip, confirmPlan, reconsiderPlan, newChat, clearDone,
+    sendMessage, stop, pickChip, confirmPlan, reconsiderPlan, newChat, clearDone,
+    reduceMotion, setReduceMotion: setReduceMotionPersist,
     previewOpen, previewTab, setPreviewTab, device, setDevice,
     setPreviewOpen: (v: boolean) => setPreviewOpen(v),
     openPreview: () => setPreviewOpen(true),

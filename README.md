@@ -8,8 +8,10 @@ DeepSeek Harness 桌面端 - 对话式 Agent 工作台（Tauri 2 + React + TypeS
 - 对话引擎直连 **MemoryProxy(:8096) → DeepSeek 真实模型**：直接回答问题；信息不足才一次一问
   （[OPTIONS] 选项）；复杂任务先 todo_write 列计划再逐步执行
 - **TencentDB Agent Memory** 真实记忆：MemoryCore(:8420) L0 对话沉淀 → L1 事实 → L2 场景 → L3 画像，新对话自动召回注入
-- **会话持久化**：对话与任务清单落 localStorage，重开 App 不丢
-- 内置浏览器预览面板（右侧滑出）、⌘K 命令面板、真实窗口控制、任务清单卡与工具执行行渲染
+- **会话持久化**：对话与任务清单落 localStorage，重开 App 不丢（含容量上限）
+- **停止按钮**：长任务可随时中断（abort 模型等待与工具执行）；连续快速发送有同步竞态防护
+- **线程状态流转**：空闲 → 执行中 → 已完成，「清空已完成对话」真实生效；模型选择与减弱动态效果均持久化
+- 工具执行失败有错误态行 + 错误 toast；内置浏览器预览面板（右侧滑出）、⌘K 命令面板、真实窗口控制、任务清单卡与工具执行行渲染
 
 设计规范见仓库根目录 `DESIGN.md`；记忆技术设计见 `docs/MEMORY.md`；工具执行服务设计见 `docs/TOOLS.md`。
 
@@ -36,8 +38,9 @@ npm run tauri dev
 ## E2E 验证（真实链路，无 mock）
 
 ```bash
-npx playwright test   # 20 用例：真实 Agent 工具流（bash/写文件）/ 真实 LLM 对话 /
-                      # [OPTIONS]/[PLAN] 协议 / 真实记忆召回与 L0 沉淀 / 会话持久化 / UI / 键盘 / 渲染
+npx playwright test   # 27 用例：真实 Agent 工具流（bash/写文件）/ 真实 LLM 对话 /
+                      # [OPTIONS]/[PLAN] 协议 / 真实记忆召回与 L0 沉淀 / 会话持久化 / 竞态防护 /
+                      # 停止中断 / 持久化设置 / 错误可见性 / UI / 键盘 / 渲染
 ```
 
 前置：本机记忆服务在跑（App 启动一次即可，或 `launchctl bootstrap gui/$(id -u) <plist>`）；

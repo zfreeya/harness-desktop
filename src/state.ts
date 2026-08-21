@@ -66,5 +66,5 @@ export function statusBadge(s: ThreadStatus): { cls: string; label: string } {
     ? { cls: "active", label: "执行中" }
     : s === "done"
       ? { cls: "done", label: "已完成" }
-      : { cls: "neutral", label: "进行中" };
+      : { cls: "neutral", label: "空闲" };
 }

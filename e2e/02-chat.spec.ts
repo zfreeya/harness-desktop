@@ -19,6 +19,7 @@ test.beforeEach(async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.goto("/");
+    await expect(page.locator("#window")).toHaveClass(/app-on/);
 
     // 真实键盘输入（含中文）
     await page.locator("#chatInput").click();

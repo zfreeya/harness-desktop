@@ -284,7 +284,7 @@ function ChatView({ h }: { h: Harness }) {
             onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
           />
-          <button className="send-btn" onClick={send} title="发送">{Ic.send}</button>
+          <button className={h.cur.thinking ? "send-btn stop" : "send-btn"} onClick={h.cur.thinking ? h.stop : send} title={h.cur.thinking ? "停止" : "发送"}>{h.cur.thinking ? <span className="stop-ico" /> : Ic.send}</button>
         </div>
         <div className="input-hint">
           <span className="mono">Enter</span> 发送 <span className="mono">Shift+Enter</span> 换行
@@ -353,7 +353,7 @@ const PALETTE = [
   { name: "打开预览", hint: "", icon: Ic.monitor, run: (h: Harness) => { h.setPaletteOpen(false); h.openPreview(); } },
   { name: "打开设置", hint: "", icon: Ic.gear, run: (h: Harness) => { h.setPaletteOpen(false); h.setSettingsOpen(true); } },
   { name: "清空已完成对话", hint: "", icon: Ic.x, run: (h: Harness) => { h.setPaletteOpen(false); h.clearDone(); } },
-  { name: "查看视觉规范 DESIGN.md", hint: "", icon: Ic.doc, run: (h: Harness) => { h.setPaletteOpen(false); h.push("info", "DESIGN.md", "视觉规范已 lint 0 错误 0 警告"); } },
+  { name: "打开设计文档", hint: "", icon: Ic.doc, run: (h: Harness) => { h.setPaletteOpen(false); h.setPreviewTab(1); h.openPreview(); } },
 ];
 
 function CommandPalette({ h }: { h: Harness }) {
@@ -453,7 +453,7 @@ function SettingsModal({ h }: { h: Harness }) {
           <div className="g-title">外观</div>
           <div className="set-row">
             <div><div className="lbl">减弱动态效果</div><div className="desc">关闭过渡与呼吸动画</div></div>
-            <label className="switch"><input type="checkbox" onChange={(e) => document.documentElement.classList.toggle("reduce-motion", e.target.checked)} /><span className="track" /><span className="knob" /></label>
+            <label className="switch"><input type="checkbox" checked={h.reduceMotion} onChange={(e) => h.setReduceMotion(e.target.checked)} /><span className="track" /><span className="knob" /></label>
           </div>
         </div>
         <div className="set-group">
@@ -473,7 +473,7 @@ function Toasts({ h }: { h: Harness }) {
   return (
     <div id="toasts">
       {h.toasts.map((t) => (
-        <div key={t.id} className="toast">
+        <div key={t.id} className={"toast " + t.kind}>
           <div className="t-txt"><b>{t.title}</b>{t.msg && <div style={{ opacity: 0.75 }}>{t.msg}</div>}</div>
         </div>
       ))}
@@ -514,21 +514,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [h]);
-
-  /* 自动化冒烟测试：?autotest=1 发一条真实消息（走真实 LLM + 记忆） */
-  useEffect(() => {
-    if (!new URLSearchParams(window.location.search).has("autotest")) return;
-    const t = setTimeout(() => {
-      const ta = document.querySelector("textarea") as HTMLTextAreaElement | null;
-      if (ta) {
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-        setter?.call(ta, "帮我做一个官网首页");
-        ta.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      document.querySelector<HTMLButtonElement>(".send-btn")?.click();
-    }, 1000);
-    return () => clearTimeout(t);
-  }, []);
 
   return (
     <>
