@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useHarness, Harness } from "./harness";
-import { Msg, Deliverable, EXEC_MODES, ExecMode, taskTitle, statusBadge, formatRelative, formatClock } from "./state";
+import { Msg, Deliverable, TaskStatus, EXEC_MODES, ExecMode, taskTitle, statusBadge, agentLabel, formatRelative, formatClock } from "./state";
 import Markdown from "./Markdown";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -42,15 +42,15 @@ const Ic = {
   doc: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></svg>),
   panel: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>),
   menu: (<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>),
-  refresh: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" /></svg>),
 };
 
-/* ================= 顶栏：任务标题（可编辑）+ 语义状态 + 必要操作 ================= */
+/* ================= 顶栏：任务状态 + Agent 状态 + 操作 ================= */
 function TitleBar({ h, sideOpen, onToggleSide }: { h: Harness; sideOpen: boolean; onToggleSide: () => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const b = statusBadge(h.cur.status);
   const title = taskTitle(h.cur);
+  const agentBusy = h.cur.thinking;
   const commit = () => { h.setTitle(draft); setEditing(false); };
   return (
     <div className="win-titlebar" data-tauri-drag-region>
@@ -68,6 +68,7 @@ function TitleBar({ h, sideOpen, onToggleSide }: { h: Harness; sideOpen: boolean
           <span className="task-title" title={"任务标题（点击修改）" + (b.tip ? "。当前状态：" + b.tip : "")} onClick={() => { setDraft(title); setEditing(true); }}>{title}</span>
         )}
         <span className={"badge " + b.cls} title={b.tip}>{b.label}</span>
+        {agentBusy && <span className="agent-chip" title="Agent 状态">{Ic.spark}{agentLabel(h.cur.agent)}</span>}
       </div>
       <div className="win-right">
         <button className={"head-btn" + (h.previewOpen ? " on" : "")} onClick={h.togglePreview} title={h.previewOpen ? "关闭预览面板" : "打开预览面板"} aria-label={h.previewOpen ? "关闭预览面板" : "打开预览面板"} aria-pressed={h.previewOpen}>{Ic.monitor}</button>
@@ -77,7 +78,7 @@ function TitleBar({ h, sideOpen, onToggleSide }: { h: Harness; sideOpen: boolean
   );
 }
 
-/* ================= 侧栏 ================= */
+/* ================= 侧栏（任务为作用域） ================= */
 function Sidebar({ h }: { h: Harness }) {
   return (
     <aside className="sidebar">
@@ -120,7 +121,7 @@ function Sidebar({ h }: { h: Harness }) {
   );
 }
 
-/* ================= 消息头（弱化元信息） ================= */
+/* ================= 消息头 ================= */
 function AgentHead({ time }: { time?: string }) {
   return (
     <div className="a-head">
@@ -131,19 +132,29 @@ function AgentHead({ time }: { time?: string }) {
   );
 }
 
-/* 工具名 → 人类可读动作 */
-const TOOL_ACTION: Record<string, string> = {
-  write: "生成文件", edit: "修改文件", bash: "运行命令", read: "读取文件",
-  glob: "查找文件", grep: "搜索内容", fetch: "抓取网页", todo_write: "更新任务清单",
-};
-function toolSummary(tools: Msg[], startId: number): string {
-  const names = Array.from(new Set(tools.map((g) => g.toolName || "tool")));
-  const actions = names.map((n) => TOOL_ACTION[n] || n).join("、");
+/* 工具 → 人类可读摘要（原始 JSON 永不默认显示） */
+function toolLineSummary(g: Msg): string {
+  let args: Record<string, unknown> = {};
+  try { args = JSON.parse(g.toolArgs || "{}"); } catch { /* ignore */ }
+  const name = g.toolName || "tool";
+  const p = String(args.path || "");
+  if (name === "read") return "已读取 " + p + (args.offset ? " · 从 " + args.offset + " 行起" : "");
+  if (name === "write") return (g.toolResult && /"operation":"create"/.test(g.toolResult) ? "已创建 " : "已更新 ") + p;
+  if (name === "edit") return "已修改 " + p;
+  if (name === "bash") return "已运行命令 " + String(args.command || "").slice(0, 40);
+  if (name === "glob") { try { const n = JSON.parse(g.toolResult || "{}").paths?.length ?? 0; return "已查找 " + n + " 个文件"; } catch { return "已查找文件"; } }
+  if (name === "grep") { try { const n = JSON.parse(g.toolResult || "{}").matches?.length ?? 0; return "已搜索 " + n + " 个匹配"; } catch { return "已搜索内容"; } }
+  if (name === "fetch") return "已抓取 " + String(args.url || "").slice(0, 40);
+  if (name === "todo_write") return "已更新任务清单";
+  return "已执行 " + name;
+}
+function toolGroupSummary(tools: Msg[], startId: number): string {
+  const parts = tools.map((g) => toolLineSummary(g));
   const sec = Math.max(0, Math.round((tools[tools.length - 1].id - startId) / 1000));
-  return "已完成 " + actions + " · " + tools.length + " 个步骤" + (sec > 0 ? " · 耗时 " + sec + " 秒" : "");
+  return parts.join("、") + " · " + tools.length + " 个步骤" + (sec > 0 ? " · 耗时 " + sec + " 秒" : "");
 }
 
-/* ================= 工具执行组（按用户请求合并；过去执行折叠为「此前执行」） ================= */
+/* ================= 工具调用组（统一折叠；展开才见原始参数/返回值/复制） ================= */
 function ToolGroup({ group, open, onToggle, past, startId }: { group: Msg[]; open: boolean; onToggle: () => void; past?: boolean; startId?: number }) {
   const running = group.some((g) => g.toolStatus === "running");
   const hasErr = group.some((g) => g.toolStatus === "error");
@@ -152,7 +163,7 @@ function ToolGroup({ group, open, onToggle, past, startId }: { group: Msg[]; ope
     <div className={"tool-group" + (hasErr ? " err" : "") + (open ? " open" : "") + (past ? " past" : "")}>
       <button className="tool-summary" onClick={onToggle} aria-expanded={open}>
         <span className="tg-status">{running ? <span className="tg-run"><i /><i /><i /></span> : hasErr ? <span className="tg-x">!</span> : Ic.check}</span>
-        <span className="tg-text">{past ? "此前执行 · " + toolSummary(group, startId ?? group[0].id) : running ? "正在执行…" : hasErr ? "部分工具执行失败 · " + toolSummary(group, startId ?? group[0].id) : toolSummary(group, startId ?? group[0].id)}</span>
+        <span className="tg-text">{past ? "此前执行 · " + toolGroupSummary(group, startId ?? group[0].id) : running ? "正在执行…" : hasErr ? "部分工具执行失败 · " + toolGroupSummary(group, startId ?? group[0].id) : toolGroupSummary(group, startId ?? group[0].id)}</span>
         <span className={"tg-chev" + (open ? " up" : "")}>{Ic.chevD}</span>
       </button>
       {open && (
@@ -178,14 +189,15 @@ function ToolGroup({ group, open, onToggle, past, startId }: { group: Msg[]; ope
   );
 }
 
-/* ================= 成果卡：一等产品对象 ================= */
-function DeliverableCard({ h, d, latest, onFocusInput }: { h: Harness; d: Deliverable; latest: boolean; onFocusInput: (p: string) => void }) {
+/* ================= 成果卡：四态（正常/预览停止/过期/生成失败） ================= */
+function DeliverableCard({ h, d, onFocusInput }: { h: Harness; d: Deliverable; onFocusInput: (p: string) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
   const url = h.toolsCfg.url + "/preview/" + d.path;
-  const running = d.state === "running";
-  const stopped = d.state === "stopped";
-  const failed = d.state === "failed";
-  const statusText = failed ? "预览已停止 · 请重新启动" : stopped ? "预览已停止" : "预览服务运行中";
+  const task = h.cur.status;
+  const online = d.preview === "online";
+  const previewLabel = d.preview === "online" ? "预览在线" : d.preview === "stopped" ? "预览已停止" : d.preview === "starting" ? "预览正在启动" : d.preview === "stale" ? "内容可能不是最新版本" : "预览加载失败";
+  const previewCls = d.preview === "online" ? "on" : d.preview === "starting" ? "starting" : "off";
   const openPreview = () => h.openDeliverable(d);
   const openBrowser = () => openExternal(url);
   const viewFile = () => {
@@ -196,62 +208,83 @@ function DeliverableCard({ h, d, latest, onFocusInput }: { h: Harness; d: Delive
     }
   };
   const copyLink = async () => { try { await navigator.clipboard.writeText(url); h.push("success", "已复制链接", url); } catch { h.push("warn", "复制失败", "请手动复制地址栏链接"); } };
+
+  /* 主操作：按状态最多一个 */
+  let primary: { label: string; run: () => void } | null = null;
+  if (d.artifact === "failed") primary = { label: "重试生成", run: () => h.regenerateArtifact(d.name) };
+  else if (d.artifact === "outdated") primary = { label: "重新生成成果", run: () => h.regenerateArtifact(d.name) };
+  else if (d.preview === "stopped") primary = { label: "重新启动预览", run: () => h.restartPreview(d.path) };
+  else if (d.preview === "loading_failed") primary = { label: "重新加载预览", run: () => h.refreshPreviewArtifact(d.path) };
+  else if (d.preview === "starting") primary = { label: "正在启动…", run: () => h.restartPreview(d.path) };
+  else if (d.preview === "stale") primary = { label: "刷新预览", run: () => h.refreshPreviewArtifact(d.path) };
+  else if (d.artifact === "ready" && d.preview === "online") primary = { label: "确认完成", run: h.confirmTask };
+  else primary = { label: "打开预览", run: openPreview };
+
+  /* 直接次操作（≤2） */
+  const secondaries: { label: string; run: () => void }[] = [];
+  if (d.preview === "stopped" || d.preview === "loading_failed") {
+    secondaries.push({ label: "查看文件", run: viewFile });
+    secondaries.push({ label: "查看诊断", run: () => setDiagOpen((v) => !v) });
+  } else if (task === "waiting_for_review" || task === "completed") {
+    secondaries.push({ label: "继续修改", run: () => onFocusInput("针对当前任务继续修改：") });
+    secondaries.push({ label: "在浏览器打开", run: openBrowser });
+  } else {
+    secondaries.push({ label: "打开预览", run: openPreview });
+    secondaries.push({ label: "在浏览器打开", run: openBrowser });
+  }
+
+  const isGame = /(tetris|snake|2048|game|games|俄罗斯|贪吃|消除|射击|平台|mario|pong)/i.test(taskTitle(h.cur)) || /(tetris|snake|2048|game|俄罗斯|贪吃)/i.test(d.name);
+  const suggestions: [string, string][] = d.type === "网页应用"
+    ? (isGame
+        ? [["优化游戏视觉", "优化这个游戏的视觉表现"], ["添加最高分记录", "为游戏添加最高分记录（localStorage）"], ["增加音效", "为游戏增加音效"]]
+        : [["美化页面", "美化这个页面的视觉表现"], ["增加响应式", "为页面增加移动端响应式适配"], ["添加交互", "为页面增加一些交互细节"]])
+    : [["完善内容", "进一步完善这个文件的内容"], ["增加导出", "为这个成果增加导出/打包能力"]];
+  const showSuggestions = online && (task === "waiting_for_review" || task === "completed");
+
   return (
-    <div className={"deliverable-card" + (failed ? " dl-failed" : stopped ? " dl-stopped" : "")}>
+    <div className={"deliverable-card" + (d.artifact === "failed" ? " dl-failed" : d.artifact === "outdated" ? " dl-outdated" : "")}>
       <div className="dc-head">
         <div>
-          <div className="dc-title">{d.name.replace(/\.html?$/i, "")}</div>
-          <div className="dc-type">{d.type} · 更新于 {formatClock(d.t)}</div>
+          <div className="dc-title">{d.name}</div>
+          <div className="dc-type">{d.type} · 文件 {d.path} · 更新于 {formatClock(d.t)}</div>
         </div>
-        <span className="dc-status"><span className={"dc-dot " + (running ? "on" : "off")} />{statusText}</span>
+        <span className={"dc-status " + previewCls}><span className="dc-dot" />{previewLabel}</span>
       </div>
-      <div className="dc-desc">网页已生成并写入工作目录，可立即在预览面板打开试玩。</div>
+      <div className="dc-desc">{d.artifact === "failed" ? "成果生成失败：" + (d.error || "未知原因") : d.artifact === "outdated" ? "文件已被后续修改，当前预览可能不是最新版本。" : "成果已生成，可在预览面板或浏览器中查看。"}</div>
       <div className="dc-url mono">{url}</div>
       <div className="dc-actions">
-        {running ? (
-          <button className="btn btn-primary" onClick={openPreview}>{Ic.monitor}打开预览</button>
-        ) : (
-          <button className="btn btn-primary" onClick={() => h.setDeliverableState(d.path, "running")}>{Ic.refresh}重新启动</button>
-        )}
-        <button className="btn btn-secondary" onClick={openBrowser} title="在系统浏览器打开">在浏览器打开</button>
-        <button className="btn btn-secondary" onClick={viewFile} title={isTauri ? "在访达中定位文件" : "查看文件"}>查看文件</button>
+        {primary && <button className="btn btn-primary" onClick={primary.run} disabled={d.preview === "starting"}>{primary.label}</button>}
+        {secondaries.map((s) => <button key={s.label} className="btn btn-secondary" onClick={s.run}>{s.label}</button>)}
         <div className="dl-more">
           <button className="btn btn-ghost dl-more-btn" onClick={() => setMenuOpen((v) => !v)} aria-label="更多操作" title="更多操作">{Ic.menu}</button>
           {menuOpen && (
             <div className="dl-menu" onMouseLeave={() => setMenuOpen(false)}>
+              <button onClick={() => { setMenuOpen(false); openPreview(); }}>打开预览</button>
               <button onClick={() => { setMenuOpen(false); copyLink(); }}>复制链接</button>
-              <button onClick={() => { setMenuOpen(false); h.setDeliverableState(d.path, "running"); }}>重新启动服务</button>
-              <button onClick={() => { setMenuOpen(false); h.setDeliverableState(d.path, "stopped"); }}>关闭服务</button>
+              <button onClick={() => { setMenuOpen(false); h.refreshPreviewArtifact(d.path); }}>刷新预览</button>
+              <button onClick={() => { setMenuOpen(false); h.restartPreview(d.path); }}>重新启动预览</button>
+              <button onClick={() => { setMenuOpen(false); h.stopPreview(d.path); }}>关闭预览</button>
             </div>
           )}
         </div>
       </div>
+      {diagOpen && (
+        <div className="dc-diag mono">
+          <div>服务地址：{h.toolsCfg.url}</div>
+          <div>工作目录：{h.toolsCfg.workspace || "未连接"}</div>
+          <div>文件：{d.path}</div>
+          <div>状态：{d.preview} {d.error ? " · " + d.error : ""}</div>
+        </div>
+      )}
+      {showSuggestions && (
+        <div className="accept-chips">
+          {suggestions.map(([label, msg]) => <button key={label} className="accept-chip" onClick={() => h.sendMessage(msg)}>{label}</button>)}
+        </div>
+      )}
       <details className="dc-help">
         <summary>操作说明</summary>
-        <p>点击「打开预览」在右侧面板试玩；刷新按钮可重载最新改动。也可复制链接在系统浏览器中打开。</p>
+        <p>在预览面板或系统浏览器中打开成果；预览停止时请先「重新启动预览」。停止 Agent 不影响预览服务。</p>
       </details>
-      {latest && <AcceptanceChips h={h} d={d} onFocusInput={onFocusInput} />}
-    </div>
-  );
-}
-
-/* ================= 验收与下一步操作（按交付物类型生成，不硬编码） ================= */
-function AcceptanceChips({ h, d, onFocusInput }: { h: Harness; d: Deliverable; onFocusInput: (p: string) => void }) {
-  const isWeb = d.type === "网页应用";
-  const suggestions = isWeb
-    ? [["优化游戏视觉", "优化这个游戏的视觉表现"], ["添加最高分记录", "为游戏添加最高分记录（localStorage）"], ["增加音效", "为游戏增加音效"], ["增加移动端控制", "为游戏增加移动端触屏控制"]]
-    : [["完善内容", "进一步完善这个文件的内容"], ["增加导出", "为这个成果增加导出/打包能力"]];
-  const focusInput = (prompt: string) => onFocusInput(prompt);
-  return (
-    <div className="accept-chips">
-      {h.cur.status !== "confirmed" && (
-        <button className="accept-chip primary" onClick={h.confirmTask} title="将任务标记为「用户已确认」">确认完成</button>
-      )}
-      <button className="accept-chip" onClick={() => focusInput("针对当前任务继续修改：")} title="聚焦输入框继续修改">继续修改</button>
-      {suggestions.map(([label, msg]) => (
-        <button key={label} className="accept-chip" onClick={() => h.sendMessage(msg)}>{label}</button>
-      ))}
-      <button className="accept-chip" onClick={() => h.openDeliverable(d)} title="查看本次修改的文件">查看修改的文件</button>
     </div>
   );
 }
@@ -274,9 +307,9 @@ function TaskSummary({ h, shrunk }: { h: Harness; shrunk: boolean }) {
       </div>
       <div className="ts-row ts-sub">
         {dl && <div className="ts-item"><span className="ts-label">最近成果</span><span className="ts-value mono">{dl.name}</span></div>}
-        {dl && <div className="ts-item"><span className="ts-label">预览状态</span><span className={"ts-value" + (dl.state === "running" ? " ok" : " err")}>{dl.state === "running" ? "运行中" : "已停止"}</span></div>}
+        {dl && <div className="ts-item"><span className="ts-label">预览状态</span><span className={"ts-value " + (dl.preview === "online" ? "ok" : dl.preview === "stopped" || dl.preview === "loading_failed" ? "err" : "warn")}>{dl.preview === "online" ? "在线" : dl.preview === "starting" ? "启动中" : dl.preview === "stopped" ? "已停止" : dl.preview === "stale" ? "过期" : "加载失败"}</span></div>}
         <div className="ts-item"><span className="ts-label">最近更新</span><span className="ts-value mono">{formatRelative(h.cur.updatedAt)}</span></div>
-        {!shrunk && dl && dl.state === "running" && (
+        {!shrunk && dl && (dl.preview === "online" || dl.preview === "starting") && (
           <button className="btn btn-primary btn-sm ts-action" onClick={() => h.openDeliverable(dl)}>{Ic.monitor}打开预览</button>
         )}
       </div>
@@ -339,11 +372,12 @@ function MsgRow({ m, h, mi }: { m: Msg; h: Harness; mi: number }) {
   return <div className="msg agent"><AgentHead time={m.time} /><div className="text"><Markdown text={m.text ?? ""} /></div></div>;
 }
 
-/* ================= 底部 Agent 操作台（含执行模式选择） ================= */
+/* ================= 底部 Agent 操作台 ================= */
 function Console({ h, text, setText, send, inputRef, prompt, clearPrompt }: { h: Harness; text: string; setText: (v: string) => void; send: () => void; inputRef: { current: HTMLTextAreaElement | null }; prompt: string; clearPrompt: () => void }) {
   const [modeOpen, setModeOpen] = useState(false);
   const modeMeta = EXEC_MODES.find((m) => m.id === h.mode) || EXEC_MODES[0];
   const wsName = (h.toolsCfg.workspace || "").split("/").filter(Boolean).pop() || "工作目录";
+  const agentBusy = h.cur.thinking;
   const pickMode = (m: ExecMode) => { h.setMode(m); setModeOpen(false); if (m === "auto") h.push("info", "已切换自动执行", "自动执行下 Agent 可能修改文件并运行命令，请确认任务描述清晰"); };
   return (
     <div className="console-bar">
@@ -369,7 +403,11 @@ function Console({ h, text, setText, send, inputRef, prompt, clearPrompt }: { h:
               </div>
             )}
           </div>
-          <button className={h.cur.thinking ? "send-btn stop" : "send-btn"} onClick={h.cur.thinking ? h.stop : send} title={h.cur.thinking ? "停止" : "发送"} aria-label={h.cur.thinking ? "停止" : "发送"}>{h.cur.thinking ? <span className="stop-ico" /> : Ic.send}</button>
+          {agentBusy ? (
+            <button className="send-btn stop" onClick={h.stop} title="停止本次执行" aria-label="停止本次执行"><span className="stop-ico" /></button>
+          ) : (
+            <button className="send-btn" onClick={send} title="发送" aria-label="发送">{Ic.send}</button>
+          )}
         </div>
         <div className="console-hint">
           <span className="mono">Enter</span> 发送 · <span className="mono">Shift+Enter</span> 换行 · <span className="mono">⌘K</span> 命令
@@ -380,7 +418,7 @@ function Console({ h, text, setText, send, inputRef, prompt, clearPrompt }: { h:
   );
 }
 
-/* ================= 对话区：任务摘要 + 执行分组时间线 + 操作台 ================= */
+/* ================= 对话区：任务摘要 + 执行分组 + 成果卡 + 操作台 ================= */
 function ChatView({ h }: { h: Harness }) {
   const [text, setText] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -401,11 +439,10 @@ function ChatView({ h }: { h: Harness }) {
   }, [h.cur.msgs.length, h.cur.thinking, h.cur.deliverables.length]);
   const send = () => { h.sendMessage(text); setText(""); };
 
-  /* 按用户请求组织执行分组（保留真实消息索引，chips 点击依赖正确索引） */
   const prelude: { m: Msg; idx: number }[] = [];
   const preludeTools: Msg[] = [];
   const episodes: { user: { m: Msg; idx: number }; rows: { m: Msg; idx: number }[]; tools: Msg[] }[] = [];
-  let curE: { user: { m: Msg; idx: number }; rows: { m: Msg; idx: number }[]; tools: Msg[] } | null = null;
+  let curE: typeof episodes[number] | null = null;
   h.cur.msgs.forEach((m, i) => {
     if (m.role === "user") { curE = { user: { m, idx: i }, rows: [], tools: [] }; episodes.push(curE); return; }
     if (!curE) { if (m.kind === "tool") preludeTools.push(m); else prelude.push({ m, idx: i }); return; }
@@ -452,11 +489,11 @@ function ChatView({ h }: { h: Harness }) {
           {h.cur.thinking && (
             <div className="msg agent">
               <div className="a-head"><span className="a-mark">{Ic.spark}</span><span className="a-name">harness-agent</span></div>
-              <div className="thinking"><span className="tt">正在执行</span><i /><i /><i /></div>
+              <div className="thinking"><span className="tt">{agentLabel(h.cur.agent)}</span><i /><i /><i /></div>
             </div>
           )}
           {h.cur.deliverables.length > 0 && (
-            <DeliverableCard h={h} d={h.cur.deliverables[h.cur.deliverables.length - 1]} latest onFocusInput={focusInput} />
+            <DeliverableCard h={h} d={h.cur.deliverables[h.cur.deliverables.length - 1]} onFocusInput={focusInput} />
           )}
         </div>
       </div>
@@ -465,33 +502,44 @@ function ChatView({ h }: { h: Harness }) {
   );
 }
 
-/* ================= 右侧预览面板（loading / error 状态） ================= */
-function PreviewPane({ h }: { h: Harness }) {
+/* ================= 右侧预览面板（简化工具栏 + 当前任务标签 + 过期/停止遮罩） ================= */
+function PreviewPane({ h, previewPct, onFocusChat, onFocusPreview }: { h: Harness; previewPct: number; onFocusChat: () => void; onFocusPreview: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => { if (h.previewOpen && !loaded) setLoaded(true); }, [h.previewOpen, loaded]);
+  /* 只显示当前任务产生的预览标签 */
+  const taskTabs = h.wsPreviews.filter((p) => !p.threadId || p.threadId === h.cur.id);
+  const historyCount = h.wsPreviews.length - taskTabs.length;
   const tabs = [
     ...h.PREVIEW_PAGES.map((p) => ({ kind: "demo" as const, ...p })),
-    ...h.wsPreviews.map((p) => ({ kind: "ws" as const, name: p.name, path: p.path, t: p.t, host: "harness.local" })),
+    ...taskTabs.map((p) => ({ kind: "ws" as const, name: p.name, path: p.path, t: p.t, host: "harness.local" })),
   ];
   const cur = tabs[Math.min(h.previewTab, tabs.length - 1)] ?? tabs[0];
   const src = cur.kind === "demo" ? cur.url : h.toolsCfg.url + "/preview/" + cur.path + "?t=" + cur.t;
   const addr = cur.kind === "demo" ? cur.host : cur.host + "/preview/" + cur.path;
+  /* 当前成果的预览状态（驱动遮罩） */
+  const curArtifact = cur.kind === "ws" ? h.cur.deliverables.find((d) => d.path === cur.path) : undefined;
+  const masked = cur.kind === "ws" && (curArtifact?.preview === "stopped" || curArtifact?.preview === "stale");
   const reload = () => {
     setLoading(true); setError(false);
     const btn = document.getElementById("reloadBtn");
     if (btn) { btn.classList.remove("reload-spin"); void (btn as HTMLElement).offsetWidth; btn.classList.add("reload-spin"); }
     h.reloadPreview();
+    if (cur.kind === "ws" && curArtifact) h.refreshPreviewArtifact(cur.path);
   };
   return (
-    <aside id="previewPane" className={"preview-pane" + (h.previewOpen ? " open" : "")}>
-      <div className="pv-inner">
+    <aside id="previewPane" className={"preview-pane" + (h.previewOpen ? " open" : "")} style={h.previewOpen ? { width: "calc(" + previewPct + " * (100% - 268px))" } : undefined}>
+      <div className="pv-inner" style={h.previewOpen ? { width: "calc(" + previewPct + " * (100% - 268px))" } : undefined}>
         <div className="pv-head">
-          <span className="t">预览</span>
-          <span className="pill mono">{cur.host}</span>
-          <button className="pv-close" onClick={h.closePreview} title="收起预览面板">{Ic.chevR}</button>
+          <span className="t">{cur.kind === "ws" ? (curArtifact?.name ?? cur.name) : "预览"}</span>
+          {historyCount > 0 && <span className="pill mono" title="其他任务的预览标签不在此显示">历史预览 {historyCount}</span>}
+          <div className="pv-focus">
+            <button className="abtn" onClick={onFocusChat} title="专注对话">对话</button>
+            <button className="abtn" onClick={onFocusPreview} title="专注预览">预览</button>
+          </div>
+          <button className="pv-close" onClick={h.closePreview} title="关闭预览面板">{Ic.chevR}</button>
         </div>
         <div className="browser-bar">
           <div className="tabs-row">
@@ -504,10 +552,8 @@ function PreviewPane({ h }: { h: Harness }) {
           </div>
           <div className="addr-row">
             <div className="nav-btns">
-              <button className="abtn" disabled title="后退">←</button>
-              <button className="abtn" disabled title="前进">→</button>
               <button className="abtn" id="reloadBtn" onClick={reload} title="刷新预览">{Ic.reload}</button>
-              <button className="abtn" onClick={() => openExternal(src)} title="在浏览器打开">{Ic.plus}</button>
+              <button className="abtn" onClick={() => openExternal(src)} title="在浏览器打开">{Ic.monitor}</button>
             </div>
             <div className="address-bar">{Ic.lock}<span className="addr">{addr}</span></div>
             <div className="dev-switch" id="devSwitch">
@@ -525,6 +571,20 @@ function PreviewPane({ h }: { h: Harness }) {
                 <div className="pv-error">
                   <div className="pv-err-msg">预览加载失败。可能原因：文件不存在或服务已停止。</div>
                   <button className="btn btn-primary btn-sm" onClick={reload}>重新加载</button>
+                </div>
+              )}
+              {masked && (
+                <div className="pv-mask">
+                  <div className="pv-mask-msg">{curArtifact?.preview === "stopped" ? "预览服务已停止。当前显示的是上次加载的内容，可能不是最新版本。" : "内容可能不是最新版本，文件已被后续修改。"}</div>
+                  <div className="pv-mask-actions">
+                    {curArtifact && (
+                      <>
+                        <button className="btn btn-primary btn-sm" onClick={() => h.restartPreview(curArtifact.path)}>重新启动预览</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openExternal(src)}>在浏览器打开旧版本</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => h.openDeliverable(curArtifact)}>查看文件</button>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
               <iframe ref={frameRef} id="previewFrame" className={"dev-" + h.device} title="预览" src={src}
@@ -676,10 +736,12 @@ function Toasts({ h }: { h: Harness }) {
   );
 }
 
-/* ================= App ================= */
+/* ================= App（三栏：侧栏 + 任务区 + 预览区，可拖拽分隔） ================= */
 export default function App() {
   const h = useHarness();
   const [sideOpen, setSideOpen] = useState(() => typeof window !== "undefined" && window.innerWidth > 920);
+  const [previewPct, setPreviewPct] = useState(0.52);
+  const dragging = useRef(false);
 
   useEffect(() => {
     if (isTauri) {
@@ -690,6 +752,23 @@ export default function App() {
         w.setFocus();
       });
     }
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const shell = document.querySelector(".shell") as HTMLElement | null;
+      if (!shell) return;
+      const rect = shell.getBoundingClientRect();
+      const avail = rect.width - 268;
+      if (avail <= 0) return;
+      const pct = Math.min(0.75, Math.max(0.35, (rect.right - e.clientX) / avail));
+      setPreviewPct(pct);
+    };
+    const onUp = () => { dragging.current = false; document.body.classList.remove("resizing"); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
   useEffect(() => {
@@ -716,7 +795,8 @@ export default function App() {
         <div className="shell">
           <Sidebar h={h} />
           <ChatView h={h} />
-          <PreviewPane h={h} />
+          {h.previewOpen && <div className="pv-divider" title="拖动调整预览宽度" onMouseDown={() => { dragging.current = true; document.body.classList.add("resizing"); }} />}
+          <PreviewPane h={h} previewPct={previewPct} onFocusChat={() => h.closePreview()} onFocusPreview={() => setPreviewPct(0.72)} />
         </div>
       </div>
       <CommandPalette h={h} />

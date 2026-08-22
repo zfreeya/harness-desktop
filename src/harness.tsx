@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Thread, Msg, Todo, Deliverable, ExecMode, EXEC_MODES, newThread, greetingMsg, now } from "./state";
+import { Thread, Msg, Todo, Deliverable, AgentStatus, ExecMode, EXEC_MODES, newThread, greetingMsg, now } from "./state";
 import {
   MemoryConfig, loadMemoryConfig, saveMemoryConfig,
   recallMemory, commitMemory, chatCompletion, LlmToolCall,
@@ -82,29 +82,42 @@ function normalizeThread(t: Partial<Thread>): Thread {
   return {
     ...base, ...t,
     id: typeof t.id === "string" ? t.id : base.id,
-    title: typeof t.title === "string" && t.title ? t.title : "新对话",
-    status: normalizeStatus(t.status),
+    title: typeof t.title === "string" && t.title ? t.title : "新任务",
+    status: normalizeTaskStatus(t.status),
+    agent: normalizeAgentStatus(t.agent),
     thinking: false,
     msgs: Array.isArray(t.msgs) ? t.msgs.map((m) => ({ ...m, toolStatus: m.toolStatus === "running" ? "error" : m.toolStatus })) : [],
     todos: Array.isArray(t.todos) ? t.todos : [],
     deliverables: Array.isArray(t.deliverables)
-      ? t.deliverables.map((d) => ({ ...d, type: d.type ?? "文件", state: d.state ?? "running", t: d.t ?? Date.now() }))
+      ? (t.deliverables as Array<Partial<import("./state").Deliverable> & Record<string, unknown>>).map((d) => ({
+          ...d,
+          path: String(d.path ?? ""),
+          name: String(d.name ?? "文件"),
+          type: (d.type as string) ?? "文件",
+          artifact: (d.artifact as import("./state").ArtifactStatus) ?? "ready",
+          preview: (d.preview as string) === "failed" ? "loading_failed" : ((d.preview as import("./state").PreviewStatus) ?? "online"),
+          error: (d.error as string | undefined) ?? ((d.state as string) === "failed" ? "预览不可用" : undefined),
+          t: (d.t as number) ?? Date.now(),
+        }))
       : [],
     updatedAt: typeof t.updatedAt === "number" ? t.updatedAt : Date.now(),
   };
 }
 
-function normalizeStatus(s?: string): import("./state").ThreadStatus {
+function normalizeTaskStatus(s?: string): import("./state").TaskStatus {
   switch (s) {
-    case "working": case "thinking": return "working";
-    case "awaiting-approval": return "awaiting-approval";
-    case "awaiting-input": case "waiting": case "idle": return "awaiting-input";
+    case "running": case "thinking": return "waiting_for_input"; // 中途刷新：执行被中断
+    case "waiting_for_approval": return "waiting_for_approval";
+    case "waiting_for_input": case "waiting": case "idle": case "cancelled": return "waiting_for_input";
     case "failed": case "error": return "failed";
-    case "ready": return "ready";
-    case "awaiting-review": case "done": return "awaiting-review";
-    case "confirmed": return "confirmed";
-    default: return "awaiting-input";
+    case "waiting_for_review": case "ready": case "done": return "waiting_for_review";
+    case "completed": return "completed";
+    default: return "waiting_for_input";
   }
+}
+
+function normalizeAgentStatus(s?: string): AgentStatus {
+  return s === "error" ? "error" : "idle";
 }
 
 function loadThreads(): Thread[] {
@@ -136,7 +149,7 @@ export function useHarness() {
   const [previewTab, setPreviewTab] = useState(0);
   /* 工作目录预览标签：agent 写出 .html 后自动加入并打开（harness.local）；
    * 持久化：重启 App 后标签仍在，成果卡「打开预览」不会落到 mock 页 */
-  const [wsPreviews, setWsPreviews] = useState<{ path: string; name: string; t: number }[]>(() => {
+  const [wsPreviews, setWsPreviews] = useState<{ path: string; name: string; t: number; threadId?: string }[]>(() => {
     try {
       const raw = localStorage.getItem(LS_WS_PREVIEWS);
       if (raw) {
@@ -322,7 +335,8 @@ export function useHarness() {
       const failed = Boolean(data && typeof data === "object" && "error" in data);
       toolEvents.current.push({ name, args, result: text, status: failed ? "error" : "done" });
       (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
-      /* HTML 产物 → 工作目录预览 + 任务交付物：新建自动打开面板，改动自动刷新并重命名任务 */
+      /* HTML 产物 → 工作目录预览 + 任务交付物（以 threadId 为作用域）：
+       * 新建 → artifact=ready / preview=starting（随后真实探测）；改写 → artifact=outdated / preview=stale */
       if (!failed && (name === "write" || name === "edit") && typeof args.path === "string" && /\.html?$/i.test(args.path)) {
         const p = String(args.path);
         const base = p.split("/").pop() ?? p;
@@ -330,18 +344,18 @@ export function useHarness() {
         setWsPreviews((list) => {
           const t = Date.now();
           return list.some((x) => x.path === p)
-            ? list.map((x) => (x.path === p ? { ...x, t } : x))
-            : [...list, { path: p, name: base, t }];
+            ? list.map((x) => (x.path === p ? { ...x, t, threadId } : x))
+            : [...list, { path: p, name: base, t, threadId }];
         });
         const dType = /\.html?$/i.test(p) ? "网页应用" : /\.(png|jpe?g|gif|svg|webp)$/i.test(p) ? "图片" : /\.md$/i.test(p) ? "文档" : "文件";
         patchThread(threadId, (tt) => {
           const has = tt.deliverables.some((d) => d.path === p);
           tt.deliverables = has
-            ? tt.deliverables.map((d) => (d.path === p ? { ...d, t: Date.now(), state: "running" } : d))
-            : [...tt.deliverables, { path: p, name: base, t: Date.now(), state: "running", type: dType }];
+            ? tt.deliverables.map((d) => (d.path === p ? { ...d, t: Date.now(), artifact: "outdated", preview: "stale" } : d))
+            : [...tt.deliverables, { path: p, name: base, t: Date.now(), type: dType, artifact: "ready", preview: "starting", sourceFile: undefined }];
         });
         if (!existed) {
-          openDeliverable({ path: p, name: base, t: Date.now(), state: "running", type: dType });
+          openDeliverable({ path: p, name: base, t: Date.now(), type: dType, artifact: "ready", preview: "starting" });
           push("success", "已在右侧预览打开", p);
         }
       }
@@ -380,7 +394,7 @@ export function useHarness() {
     // （症状：第二轮起的回复都在回答上一轮）。因此用本地快照构建历史。
     const snapshot: Thread = { ...t, title, msgs: [...t.msgs, userMsg], thinking: true, todos: [...t.todos] };
     pushMsg(t.id, userMsg);
-    patchThread(t.id, (tt) => { tt.thinking = true; tt.status = "working"; });
+    patchThread(t.id, (tt) => { tt.thinking = true; tt.agent = "thinking"; tt.status = "running"; });
 
     let recallCtx = "";
     if (isFirstUser && memCfg.enabled) {
@@ -430,7 +444,9 @@ export function useHarness() {
             toolArgs: JSON.stringify(args).slice(0, 400),
             toolStatus: "running",
           });
+          patchThread(t.id, (tt) => { tt.agent = "using_tool"; tt.thinking = true; });
           const { text: result, failed } = await execTool(call.function.name, args, t.id);
+          patchThread(t.id, (tt) => { tt.agent = "thinking"; });
           // 停止时工具可能被中断：行状态仍按失败标记
           patchMsg(t.id, msgId, (m) => ({ ...m, toolStatus: failed ? "error" : "done", toolResult: result.slice(0, 4000) }));
           messages.push({ role: "tool", tool_call_id: call.id, content: result.slice(0, 8000) });
@@ -441,18 +457,20 @@ export function useHarness() {
     } finally {
       busyRef.current = false;
       stopCtrlRef.current = null;
-      patchThread(t.id, (tt) => { tt.thinking = false; });
+      patchThread(t.id, (tt) => { tt.thinking = false; tt.agent = "idle"; });
     }
 
     if (stopped) {
       patchThread(t.id, (tt) => {
-        tt.status = "awaiting-input";
-        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "已停止。可以继续输入，或说「继续执行」。", time: now() });
+        tt.agent = "stopped";
+        tt.status = "cancelled";
+        tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "已停止本次执行。已生成的成果仍然保留，可继续输入新需求。", time: now() });
       });
       return;
     }
     if (finalError) {
       patchThread(t.id, (tt) => {
+        tt.agent = "error";
         tt.status = "failed";
         tt.msgs.push({ id: Date.now(), role: "agent", kind: "text", text: "执行失败：" + finalError + "。下一步：检查设置里的 MemoryProxy 地址与密钥后重试，或直接描述你的新需求。", time: now() });
       });
@@ -461,10 +479,10 @@ export function useHarness() {
     const p = parseReply(finalContent);
     patchThread(t.id, (tt) => {
       /* 状态由真实数据驱动：产出交付物→等待验收；计划→等待授权；选项/追问→等待输入 */
-      if (tt.deliverables.length > prevDeliverableCount) tt.status = "awaiting-review";
-      else if (p.kind === "plan") tt.status = "awaiting-approval";
-      else if (p.kind === "ask") tt.status = "awaiting-input";
-      else tt.status = "awaiting-input";
+      if (tt.deliverables.length > prevDeliverableCount) tt.status = "waiting_for_review";
+      else if (p.kind === "plan") tt.status = "waiting_for_approval";
+      else if (p.kind === "ask") tt.status = "waiting_for_input";
+      else tt.status = "waiting_for_input";
       tt.msgs.push({ id: Date.now(), role: "agent", kind: p.kind, text: p.text, opts: p.opts, items: p.items, time: now() });
     });
     /* 每轮对话写入真实记忆（L0） */
@@ -495,36 +513,42 @@ export function useHarness() {
   /** 确认完成：等待验收 → 用户已确认 */
   const confirmTask = useCallback(() => {
     const id = currentRef.current;
-    patchThread(id, (tt) => { tt.status = "confirmed"; });
+    patchThread(id, (tt) => { tt.status = "completed"; });
     push("success", "已确认", "任务标记为「用户已确认」");
   }, [push]);
 
-  /** 停止当前进行中的 agent 循环（中断 LLM 等待与工具执行） */
+  /** 停止本次执行（仅停止 Agent；预览服务由成果卡/预览工具栏控制，不受影响） */
   const stop = useCallback(() => {
     if (!busyRef.current) return;
     stopRequestedRef.current = true;
     stopCtrlRef.current?.abort();
+    patchThread(currentRef.current, (tt) => { tt.agent = "stopped"; });
   }, []);
 
-  /** 探测交付物预览服务真实状态：200→运行中；404→文件缺失；网络错误→服务不可用 */
+  /** 探测交付物预览服务真实状态：200→online；404→loading_failed(文件缺失)；网络错误→loading_failed(服务不可用) */
   const pingDeliverable = useCallback((path: string) => {
     return fetch(toolsCfg.url + "/preview/" + path + "?t=" + Date.now(), { method: "GET" })
-      .then((r) => (r.ok ? "running" : "failed"))
-      .catch(() => "failed")
-      .then((state) => {
-        const st = state as "running" | "failed";
+      .then((r) => (r.ok ? "online" : "loading_failed"))
+      .catch(() => "loading_failed")
+      .then((preview) => {
+        const pv = preview as "online" | "loading_failed";
         patchThread(currentRef.current, (tt) => {
-          tt.deliverables = tt.deliverables.map((d) => (d.path === path ? { ...d, state: st } : d));
+          tt.deliverables = tt.deliverables.map((d) =>
+            d.path === path ? { ...d, preview: pv, error: pv === "online" ? undefined : "预览服务不可用或文件缺失" } : d
+          );
         });
-        return st;
+        return pv;
       });
   }, [toolsCfg.url]);
 
-  /** 打开交付物预览：标签缺失时自动重建（重启后线程成果卡仍可直达游戏） */
+  /** 打开交付物预览：标签缺失时自动重建；标签以当前任务为作用域 */
   const openDeliverable = useCallback((d: Deliverable) => {
-    let idx = wsPreviewsRef.current.findIndex((x) => x.path === d.path);
+    const thId = currentRef.current;
+    let idx = wsPreviewsRef.current.findIndex((x) => x.path === d.path && x.threadId === thId);
     if (idx < 0) {
-      setWsPreviews((list) => (list.some((x) => x.path === d.path) ? list : [...list, { path: d.path, name: d.name, t: Date.now() }]));
+      setWsPreviews((list) =>
+        list.some((x) => x.path === d.path && x.threadId === thId) ? list : [...list, { path: d.path, name: d.name, t: Date.now(), threadId: thId }]
+      );
       idx = wsPreviewsRef.current.length;
     }
     setPreviewTab(PREVIEW_PAGES.length + idx);
@@ -532,13 +556,31 @@ export function useHarness() {
     pingDeliverable(d.path);
   }, [pingDeliverable]);
 
-  /** 重新启动 / 停止交付物预览服务（本地语义 + 真实探测） */
-  const setDeliverableState = useCallback((path: string, state: "running" | "stopped") => {
+  /** 重新启动预览服务：starting → 真实探测 */
+  const restartPreview = useCallback((path: string) => {
     patchThread(currentRef.current, (tt) => {
-      tt.deliverables = tt.deliverables.map((d) => (d.path === path ? { ...d, state } : d));
+      tt.deliverables = tt.deliverables.map((d) => (d.path === path ? { ...d, preview: "starting", error: undefined } : d));
     });
-    if (state === "running") pingDeliverable(path);
+    pingDeliverable(path);
   }, [pingDeliverable]);
+
+  /** 停止预览服务（不触碰成果与 Agent 状态） */
+  const stopPreview = useCallback((path: string) => {
+    patchThread(currentRef.current, (tt) => {
+      tt.deliverables = tt.deliverables.map((d) => (d.path === path ? { ...d, preview: "stopped" } : d));
+    });
+  }, []);
+
+  /** 刷新预览（重新探测 + 刷新标签缓存戳） */
+  const refreshPreviewArtifact = useCallback((path: string) => {
+    setWsPreviews((list) => list.map((x) => (x.path === path ? { ...x, t: Date.now() } : x)));
+    pingDeliverable(path);
+  }, [pingDeliverable]);
+
+  /** 重新生成成果：真实让 Agent 重新产出该文件 */
+  const regenerateArtifact = useCallback((name: string) => {
+    sendMessage("重新生成 " + name + "，保持相同要求，生成后汇报结果");
+  }, [sendMessage]);
 
   /** 关闭一个工作目录预览标签；若关闭的是当前标签则切回首个内置页 */
   const closeWsPreview = (p: string) => {
@@ -562,7 +604,7 @@ export function useHarness() {
 
   const clearDone = () => {
     setThreads((ts) => {
-      const rest = ts.filter((t) => t.status !== "confirmed");
+      const rest = ts.filter((t) => t.status !== "completed");
       return rest.length ? rest : [firstThread()];
     });
     push("success", "已清理");
@@ -571,7 +613,8 @@ export function useHarness() {
   return {
     threads, current, cur, setCurrent: switchThread,
     sendMessage, stop, pickChip, confirmPlan, reconsiderPlan, newChat, clearDone,
-    setTitle, confirmTask, mode, setMode, openDeliverable, pingDeliverable, setDeliverableState,
+    setTitle, confirmTask, mode, setMode, openDeliverable, pingDeliverable,
+    restartPreview, stopPreview, refreshPreviewArtifact, regenerateArtifact,
     reduceMotion, setReduceMotion: setReduceMotionPersist,
     previewOpen, previewTab, setPreviewTab, device, setDevice,
     setPreviewOpen: (v: boolean) => setPreviewOpen(v),

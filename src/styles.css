@@ -548,3 +548,36 @@ select.inp {
 
 /* 输入区提示进一步弱化 */
 .console-hint { opacity: 0.8; }
+
+
+/* ============ 三栏布局与分隔条 ============ */
+.pv-divider { width: 4px; flex: none; cursor: col-resize; background: transparent; transition: background 0.15s; }
+.pv-divider:hover { background: var(--color-primary-soft); }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing .pv-divider { background: var(--color-primary-soft); }
+
+/* ============ Agent 状态 chip ============ */
+.agent-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--color-primary-strong); background: var(--color-primary-soft); border-radius: var(--radius-full); padding: 2px 9px; }
+.agent-chip svg { width: 9px; height: 9px; }
+
+/* ============ 成果卡状态色 ============ */
+.deliverable-card.dl-outdated { border-color: var(--color-warning-strong); }
+.dc-status { font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.dc-status.on { color: var(--color-success-strong); }
+.dc-status.starting { color: var(--color-primary-strong); }
+.dc-status.off { color: var(--color-warning-strong); }
+.dc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-ink-faint); }
+.dc-status.on .dc-dot { background: var(--color-success-strong); box-shadow: 0 0 0 3px var(--color-success-soft); }
+.dc-status.starting .dc-dot { background: var(--color-primary); animation: pulse 1.2s infinite; }
+.dc-status.off .dc-dot { background: var(--color-warning-strong); }
+.dc-diag { margin-top: 8px; font-size: 11px; color: var(--color-ink-muted); background: var(--color-surface-2); border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); padding: 8px 10px; line-height: 1.7; }
+.ts-value.warn { color: var(--color-warning-strong); }
+
+/* ============ 预览遮罩（停止/过期） ============ */
+.pv-mask { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(247, 247, 245, 0.86); z-index: 3; padding: 28px; text-align: center; backdrop-filter: none; }
+.pv-mask-msg { font-size: 13px; color: var(--color-ink); line-height: 1.7; max-width: 36ch; }
+.pv-mask-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+/* ============ 预览聚焦 ============ */
+.pv-focus { display: flex; gap: 2px; }
+.pv-focus .abtn { font-size: 11px; padding: 0 8px; }

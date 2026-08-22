@@ -65,24 +65,24 @@ test.describe("桌面端优化专项", () => {
   test("线程状态徽章流转与清空已完成", async ({ page }) => {
     await page.goto("/");
     // 初始：等待用户输入（状态点）
-    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "awaiting-input");
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "waiting_for_input");
     await expect(page.locator(".win-titlebar .badge")).toHaveText("等待用户输入");
     // 生成网页 → 等待验收
     await page.locator("#chatInput").click();
     await page.locator("#chatInput").type("请用 write 工具创建文件 status-demo.html，内容为 <h1>状态流转</h1>");
     await page.locator(".send-btn").click();
     await expect(page.locator(".deliverable-card")).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "awaiting-review");
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "waiting_for_review");
     await expect(page.locator(".win-titlebar .badge")).toHaveText("等待验收");
-    // 确认完成 → 用户已确认
-    await page.locator(".accept-chip.primary").click();
+    // 确认完成（主操作）→ 用户已确认
+    await page.locator(".dc-actions .btn-primary").click();
     await expect(page.locator(".win-titlebar .badge")).toHaveText("用户已确认");
-    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "confirmed");
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "completed");
     // ⌘K 清空已确认 → 只剩一个新的等待用户输入线程
     await page.keyboard.press("Meta+k");
     await page.locator(".palette-item", { hasText: "清空已确认任务" }).click();
     await expect(page.locator(".thread-item")).toHaveCount(1);
-    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "awaiting-input");
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "waiting_for_input");
   });
 
   test("减弱动态效果持久化", async ({ page }) => {

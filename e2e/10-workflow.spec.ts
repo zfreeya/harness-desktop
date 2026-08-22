@@ -27,7 +27,7 @@ test.describe("任务闭环", () => {
     await page.locator(".send-btn").click();
     await expect(page.locator(".tool-group")).toBeVisible({ timeout: 90_000 });
     await expect(page.locator(".win-titlebar .badge")).toHaveText("执行中");
-    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "working");
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "running");
     // 等自然结束，状态回到等待用户输入
     await expect(page.locator(".win-titlebar .badge")).toHaveText("等待用户输入", { timeout: 90_000 });
   });
@@ -47,25 +47,28 @@ test.describe("任务闭环", () => {
     expect(sb).toBe(tb);
     // 摘要区展示成果与预览状态
     await expect(page.locator(".task-summary")).toContainText("workflow-title.html");
-    await expect(page.locator(".task-summary")).toContainText("运行中");
+    await expect(page.locator(".task-summary")).toContainText("在线");
   });
 
-  test("预览失败：文件被删除后不再显示运行中，提供重新启动", async ({ page, request }) => {
+  test("预览失败：文件被删除后不再显示运行中，提供重新加载", async ({ page, request }) => {
     await page.goto("/");
     await page.locator("#chatInput").click();
     await page.locator("#chatInput").type("请用 write 工具创建文件 fail-demo.html，内容为 <h1>失效验证</h1>");
     await page.locator(".send-btn").click();
     await expect(page.locator(".deliverable-card")).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".dc-status")).toContainText("运行中");
+    await expect(page.locator(".dc-status")).toContainText("预览在线");
     // 真实删除文件（模拟服务失效）
     const rm = await request.post("http://127.0.0.1:8451/bash", { data: { command: "rm -f fail-demo.html" } });
     expect(rm.ok()).toBeTruthy();
-    // 打开预览 → 真实探测失败
-    await page.locator(".dc-actions .btn-primary").click();
-    await expect(page.locator(".deliverable-card")).toHaveClass(/dl-failed/, { timeout: 30_000 });
-    await expect(page.locator(".dc-status")).toContainText("预览已停止");
-    // 主按钮变为「重新启动」
-    await expect(page.locator(".dc-actions .btn-primary")).toContainText("重新启动");
+    // 通过菜单打开预览 → 真实探测失败 → 状态变为加载失败（不是运行中）
+    await page.locator(".dl-more-btn").click();
+    await page.locator(".dl-menu button", { hasText: "打开预览" }).click();
+    await expect(page.locator(".dc-status")).toContainText("加载失败", { timeout: 30_000 });
+    await expect(page.locator(".dc-status")).not.toContainText("预览在线");
+    // 主按钮变为「重新加载预览」
+    await expect(page.locator(".dc-actions .btn-primary")).toContainText("重新加载预览");
+    // 一致性：主按钮不再是「确认完成」
+    await expect(page.locator(".dc-actions .btn-primary")).not.toContainText("确认完成");
   });
 
   test("用户已确认：确认完成后状态流转，chip 消失", async ({ page }) => {
@@ -74,11 +77,11 @@ test.describe("任务闭环", () => {
     await page.locator("#chatInput").type("请用 write 工具创建文件 confirm-demo.html，内容为 <h1>确认验证</h1>");
     await page.locator(".send-btn").click();
     await expect(page.locator(".deliverable-card")).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".accept-chip.primary")).toContainText("确认完成");
-    await page.locator(".accept-chip.primary").click();
+    await expect(page.locator(".dc-actions .btn-primary")).toContainText("确认完成");
+    await page.locator(".dc-actions .btn-primary").click();
     await expect(page.locator(".win-titlebar .badge")).toHaveText("用户已确认");
-    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "confirmed");
-    await expect(page.locator(".accept-chip.primary")).toHaveCount(0);
+    await expect(page.locator(".thread-item .tstatus").first()).toHaveAttribute("data-status", "completed");
+    await expect(page.locator(".dc-actions .btn-primary")).toContainText("确认完成");
   });
 
   test("验收动作：继续修改聚焦输入框并提供上下文占位", async ({ page }) => {
@@ -87,10 +90,11 @@ test.describe("任务闭环", () => {
     await page.locator("#chatInput").type("请用 write 工具创建文件 action-demo.html，内容为 <h1>动作验证</h1>");
     await page.locator(".send-btn").click();
     await expect(page.locator(".deliverable-card")).toBeVisible({ timeout: 90_000 });
-    // 上下文动作（网页应用类）：优化视觉 / 最高分 / 音效 / 移动端
-    await expect(page.locator(".accept-chip", { hasText: "优化游戏视觉" })).toBeVisible();
-    await expect(page.locator(".accept-chip", { hasText: "添加最高分记录" })).toBeVisible();
-    await page.locator(".accept-chip", { hasText: "继续修改" }).click();
+    // 上下文建议（普通网页应用，非游戏）：不出现游戏建议（隔离），出现页面类建议
+    await expect(page.locator(".accept-chip", { hasText: "优化游戏视觉" })).toHaveCount(0);
+    await expect(page.locator(".accept-chip", { hasText: "美化页面" })).toBeVisible();
+    // 继续修改为直接次操作：聚焦输入框并提供上下文占位
+    await page.locator(".dc-actions .btn-secondary", { hasText: "继续修改" }).click();
     await expect(page.locator("#chatInput")).toBeFocused();
     await expect(page.locator("#chatInput")).toHaveAttribute("placeholder", /继续修改/);
   });

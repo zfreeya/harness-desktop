@@ -35,7 +35,9 @@ test.beforeEach(async ({ page }) => {
 
     // 等待真实回复（模型 5~30 秒）：agent 文本消息数量必须增加（排除问候语/工具行误判）
     const before = await page.locator(".msg.agent .text").count();
-    await expect(page.locator(".msg.agent .text")).toHaveCount(before + 1, { timeout: 90_000 });
+    await expect
+      .poll(async () => page.locator(".msg.agent .text").count(), { timeout: 90_000 })
+      .toBeGreaterThan(before);
 
     const reply = page.locator(".msg.agent .text, .msg.agent .chips, .msg.agent .plan-card").last();
     await expect(reply).toBeVisible();

@@ -42,7 +42,7 @@ test.describe("Agent 工作台重设计", () => {
     await page.locator(".send-btn").click();
     // 摘要行可见（一行人类可读摘要），原始行默认不可见
     await expect(page.locator(".tool-group")).toBeVisible({ timeout: 90_000 });
-    await expect(page.locator(".tool-summary")).toContainText(/已完成|正在执行/);
+    await expect(page.locator(".tool-summary")).toContainText(/已运行|已读取|已创建|已更新|已修改|正在执行/);
     await expect(page.locator(".tool-line")).toHaveCount(0);
     // 点击展开
     await page.locator(".tool-summary").first().click();
@@ -60,17 +60,16 @@ test.describe("Agent 工作台重设计", () => {
     // 成果卡出现：标题/状态/主按钮/次按钮/操作说明
     await expect(page.locator(".deliverable-card")).toBeVisible({ timeout: 90_000 });
     await expect(page.locator(".dc-title")).toContainText("deliver-demo");
-    await expect(page.locator(".dc-status")).toContainText("运行中");
-    await expect(page.locator(".dc-actions .btn-primary")).toContainText("打开预览");
-    await expect(page.locator(".dc-actions .btn-secondary")).toHaveCount(2); // 在浏览器打开 / 查看文件
-    await expect(page.locator(".dc-actions .btn-secondary").first()).toContainText("在浏览器打开");
+    await expect(page.locator(".dc-status")).toContainText("预览在线");
+    await expect(page.locator(".dc-actions .btn-primary")).toContainText("确认完成");
+    await expect(page.locator(".dc-actions .btn-secondary")).toHaveCount(2); // 继续修改 / 在浏览器打开
     await expect(page.locator(".dl-more-btn")).toBeVisible();
     await page.locator(".dl-more-btn").click();
     await expect(page.locator(".dl-menu button", { hasText: "复制链接" })).toBeVisible();
-    await expect(page.locator(".dl-menu button", { hasText: "重新启动服务" })).toBeVisible();
+    await expect(page.locator(".dl-menu button", { hasText: "打开预览" })).toBeVisible();
     await expect(page.locator(".dc-help summary")).toContainText("操作说明");
-    // 主按钮 → 预览面板打开并指向该文件
-    await page.locator(".dc-actions .btn-primary").click();
+    // 菜单「打开预览」→ 预览面板打开并指向该文件
+    await page.locator(".dl-menu button", { hasText: "打开预览" }).click();
     await expect(page.locator("#previewPane")).toHaveClass(/open/);
     await expect(page.locator(".btab", { hasText: "deliver-demo.html" })).toBeVisible();
     const frame = page.frameLocator("#previewFrame");
@@ -88,8 +87,9 @@ test.describe("Agent 工作台重设计", () => {
     // 模拟重启：刷新后线程与预览标签都保留
     await page.reload();
     await expect(page.locator(".deliverable-card")).toBeVisible();
-    // 点成果卡「打开预览」→ 必须直达 persist-preview.html，而不是 mock 内置页
-    await page.locator(".dc-actions .btn-primary").click();
+    // 通过菜单「打开预览」→ 必须直达 persist-preview.html，而不是 mock 内置页
+    await page.locator(".dl-more-btn").click();
+    await page.locator(".dl-menu button", { hasText: "打开预览" }).click();
     await expect(page.locator("#previewPane")).toHaveClass(/open/);
     const src = await page.locator("#previewFrame").getAttribute("src");
     expect(src).toContain("/preview/persist-preview.html");
