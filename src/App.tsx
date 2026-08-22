@@ -78,6 +78,109 @@ function TitleBar({ h, sideOpen, onToggleSide }: { h: Harness; sideOpen: boolean
   );
 }
 
+/* ================= 新建任务类型菜单 ================= */
+function NewTaskMenu({ h }: { h: Harness }) {
+  const [open, setOpen] = useState(false);
+  const types: [string, "general" | "web" | "godot" | "import_godot", string][] = [
+    ["普通任务", "general", "对话 + 工具执行，如整理文件、写脚本"],
+    ["网页应用", "web", "生成可预览的 HTML 网页"],
+    ["Godot 游戏", "godot", "创建并运行真实 Godot 2D 游戏项目"],
+    ["导入 Godot 项目", "import_godot", "导入已有 Godot 项目目录"],
+  ];
+  return (
+    <div className="newtask-wrap">
+      <button className="btn btn-new-chat" onClick={() => setOpen((v) => !v)} title="新建一个任务">{Ic.plus}新建任务</button>
+      {open && (
+        <div className="newtask-pop" onMouseLeave={() => setOpen(false)}>
+          {types.map(([label, kind, desc]) => (
+            <button key={kind} className="newtask-item" onClick={() => { setOpen(false); h.newChat(kind); }}>
+              <span className="nt-name">{label}</span>
+              <span className="nt-desc">{desc}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================= Godot 游戏工作区（右侧面板，真实服务驱动） ================= */
+function GameWorkspace({ h }: { h: Harness }) {
+  const [tab, setTab] = useState<"game" | "scene" | "console">("game");
+  const [engine, setEngine] = useState<{ status: string; runtime: { path?: string; version?: string } | null }>({ status: "unavailable", runtime: null });
+  const [game, setGame] = useState<{ status: string; scene?: string; logs: { stream: string; text: string }[] }>({ status: "stopped", logs: [] });
+  const [proj, setProj] = useState<{ ok?: boolean; name?: string; mainScene?: string; scenes?: string[]; scripts?: string[]; tree?: { name: string; type: string; parent: string | null }[] }>({});
+  const [selPath, setSelPath] = useState("");
+  const g = h.godotCfg.url;
+  const pid = h.cur.id;
+  const call = async (ep: string, body: Record<string, unknown> = {}) => {
+    try { const r = await fetch(g + ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, projectId: pid, taskId: pid }) }); return await r.json(); }
+    catch { return { ok: false, error: "Godot 服务不可达" }; }
+  };
+  const refresh = async () => {
+    const [hres, sres, dres, scres] = await Promise.all([fetch(g + "/health").then(r => r.json()).catch(() => ({})), call("/status"), call("/diagnostics"), call("/scenes")]);
+    setEngine({ status: hres.engineStatus || "unavailable", runtime: hres.runtime || null });
+    setGame({ status: sres.game || "stopped", scene: sres.scene, logs: sres.logs || [] });
+    setProj({ ...(dres.project || {}), ...(scres.ok ? { tree: scres.tree, scenes: scres.scenes, scripts: scres.scripts, mainScene: scres.mainScene } : {}) });
+  };
+  useEffect(() => { refresh(); const iv = setInterval(refresh, 3000); return () => clearInterval(iv); }, [g, pid]);
+  const btn = (label: string, run: () => void, primary = false) => <button className={"btn " + (primary ? "btn-primary" : "btn-secondary") + " btn-sm"} onClick={run}>{label}</button>;
+  return (
+    <aside className="game-workspace">
+      <div className="gw-head">
+        <span className="t">游戏工作区</span>
+        <span className={"badge " + (engine.status === "ready" ? "done" : "neutral")}>{engine.status === "ready" ? "引擎就绪" : "引擎未安装"}</span>
+        <button className="pv-close" onClick={h.closePreview} title="关闭">{Ic.chevR}</button>
+      </div>
+      <div className="gw-engine">
+        <div className="gw-engine-row">
+          <span className="gw-label">Godot 运行时</span>
+          <span className="mono">{engine.runtime ? engine.runtime.version || engine.runtime.path : "未检测到"}</span>
+          <button className="btn btn-ghost btn-sm" onClick={async () => { await call("/detect"); refresh(); }}>检测</button>
+        </div>
+        <div className="gw-engine-row">
+          <input className="inp-txt" style={{ flex: 1 }} placeholder="手动选择 Godot 可执行文件路径" value={selPath} onChange={(e) => setSelPath(e.target.value)} />
+          <button className="btn btn-secondary btn-sm" onClick={async () => { if (selPath) { await call("/select", { path: selPath }); refresh(); } }}>选择</button>
+        </div>
+        {engine.status === "unavailable" && <div className="gw-hint">未安装 Godot。可手动选择可执行文件，或将 Godot 放入 /Applications/Godot.app 后点「检测」。下载能力将在后续版本提供（不会伪造安装状态）。</div>}
+      </div>
+      <div className="gw-tabs">
+        {(["game", "scene", "console"] as const).map((k) => <button key={k} className={"gw-tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>{k === "game" ? "游戏" : k === "scene" ? "场景" : "控制台"}</button>)}
+      </div>
+      <div className="gw-body">
+        {tab === "game" && (
+          <div className="gw-game">
+            <div className="gw-status">游戏状态：<b>{game.status === "running" ? "运行中" : "已停止"}</b>{game.scene ? " · 场景 " + game.scene : ""}</div>
+            <div className="gw-actions">
+              {btn("运行", async () => { await call("/run"); refresh(); }, true)}
+              {btn("停止", async () => { await call("/stop"); refresh(); })}
+              {btn("重启", async () => { await call("/restart"); refresh(); })}
+              {btn("导出 Web", async () => { const r = await call("/export-web"); h.push(r.ok ? "success" : "warn", r.ok ? "已导出 Web" : "导出不可用", r.hint || ""); })}
+            </div>
+            {game.status === "stopped" && engine.status === "unavailable" && <div className="gw-hint">无法运行：需要 Godot 运行时。</div>}
+          </div>
+        )}
+        {tab === "scene" && (
+          <div className="gw-scene">
+            <div className="gw-label">主场景：{proj.mainScene || "（未设置）"}</div>
+            <div className="gw-label">场景 {proj.scenes?.length ?? 0} 个 · 脚本 {proj.scripts?.length ?? 0} 个</div>
+            <div className="gw-tree">
+              {(proj.tree || []).map((n) => <div key={n.name} className="gw-node"><span className="mono">{n.type}</span>{n.name}</div>)}
+            </div>
+            {(proj.scenes || []).map((s) => <div key={s} className="gw-node mono">{s}</div>)}
+          </div>
+        )}
+        {tab === "console" && (
+          <div className="gw-console mono">
+            {(game.logs || []).slice(-30).map((l, i) => <div key={i} className={"gw-log " + l.stream}>{l.text}</div>)}
+            {(game.logs || []).length === 0 && <div className="gw-hint">暂无运行日志。</div>}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 /* ================= 侧栏（任务为作用域） ================= */
 function Sidebar({ h }: { h: Harness }) {
   return (
@@ -86,7 +189,7 @@ function Sidebar({ h }: { h: Harness }) {
         <span className="sb-mark">{Ic.mark}</span>
         <span className="sb-name">Harness</span>
       </div>
-      <button className="btn btn-new-chat" onClick={h.newChat} title="新建一个任务">{Ic.plus}新建任务</button>
+      <NewTaskMenu h={h} />
       <div className="side-search">
         <div className="search-input" onClick={() => h.setPaletteOpen(true)}>
           {Ic.search}
@@ -146,6 +249,17 @@ function toolLineSummary(g: Msg): string {
   if (name === "grep") { try { const n = JSON.parse(g.toolResult || "{}").matches?.length ?? 0; return "已搜索 " + n + " 个匹配"; } catch { return "已搜索内容"; } }
   if (name === "fetch") return "已抓取 " + String(args.url || "").slice(0, 40);
   if (name === "todo_write") return "已更新任务清单";
+  if (name === "detect_godot_runtime") return (g.toolResult && /"found":true/.test(g.toolResult)) ? "已识别 Godot 运行时" : "未检测到 Godot 运行时";
+  if (name === "select_godot_runtime") return (g.toolResult && /"ok":true/.test(g.toolResult)) ? "已选择 Godot 运行时" : "Godot 运行时选择失败";
+  if (name === "create_godot_project") return "已创建 Godot 项目";
+  if (name === "inspect_godot_project") return "已检查 Godot 项目";
+  if (name === "list_godot_scenes") return "已列出场景与节点";
+  if (name === "validate_godot_project") return "已校验 Godot 项目";
+  if (name === "run_godot_project" || name === "run_godot_scene") return (g.toolResult && /"ok":true/.test(g.toolResult)) ? "已运行场景 " + String(args.scene || "") : "运行失败（运行时缺失）";
+  if (name === "stop_godot_game") return "已停止游戏";
+  if (name === "restart_godot_game") return "已重新启动游戏";
+  if (name === "collect_godot_diagnostics") return "已收集 Godot 诊断";
+  if (name === "export_godot_web") return (g.toolResult && /"ok":true/.test(g.toolResult)) ? "已导出 Web 版本" : "Web 导出失败（模板或运行时缺失）";
   return "已执行 " + name;
 }
 function toolGroupSummary(tools: Msg[], startId: number): string {
@@ -796,7 +910,9 @@ export default function App() {
           <Sidebar h={h} />
           <ChatView h={h} />
           {h.previewOpen && <div className="pv-divider" title="拖动调整预览宽度" onMouseDown={() => { dragging.current = true; document.body.classList.add("resizing"); }} />}
-          <PreviewPane h={h} previewPct={previewPct} onFocusChat={() => h.closePreview()} onFocusPreview={() => setPreviewPct(0.72)} />
+          {h.cur.kind === "godot" || h.cur.kind === "import_godot"
+            ? <GameWorkspace h={h} />
+            : <PreviewPane h={h} previewPct={previewPct} onFocusChat={() => h.closePreview()} onFocusPreview={() => setPreviewPct(0.72)} />}
         </div>
       </div>
       <CommandPalette h={h} />

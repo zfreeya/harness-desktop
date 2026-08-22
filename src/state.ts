@@ -75,7 +75,8 @@ export interface Deliverable {
 
 export interface Thread {
   id: string;
-  title: string;           // 任务标题（用户目标）
+  title: string;
+  kind: TaskKind;           // 任务标题（用户目标）
   status: TaskStatus;
   agent: AgentStatus;
   msgs: Msg[];
@@ -93,6 +94,7 @@ export function newThread(): Thread {
   return {
     id: "C-" + tid++,
     title: "新任务",
+    kind: "general",
     status: "waiting_for_input",
     agent: "idle",
     msgs: [],
@@ -162,6 +164,33 @@ export function formatClock(epoch: number): string {
 }
 
 /* 执行模式 */
+/* ================= Godot 能力状态模型（真实服务驱动） ================= */
+export type TaskKind = "general" | "web" | "godot" | "import_godot";
+export type EngineStatus = "unavailable" | "detecting" | "downloading" | "installing" | "ready" | "incompatible" | "crashed";
+export type GameStatus = "stopped" | "starting" | "running" | "paused" | "crashed";
+export type ProjectStatus = "unknown" | "creating" | "importing" | "ready" | "invalid" | "missing_dependencies";
+
+export function engineLabel(s: EngineStatus): string {
+  switch (s) {
+    case "detecting": return "检测中";
+    case "downloading": return "下载中";
+    case "installing": return "安装中";
+    case "ready": return "就绪";
+    case "incompatible": return "版本不兼容";
+    case "crashed": return "已崩溃";
+    default: return "未安装";
+  }
+}
+export function gameLabel(s: GameStatus): string {
+  switch (s) {
+    case "starting": return "启动中";
+    case "running": return "运行中";
+    case "paused": return "已暂停";
+    case "crashed": return "已崩溃";
+    default: return "已停止";
+  }
+}
+
 export type ExecMode = "auto" | "confirm" | "plan-only";
 export const EXEC_MODES: { id: ExecMode; label: string; desc: string }[] = [
   { id: "auto", label: "自动执行", desc: "Agent 自主调用工具执行，可能修改文件、运行命令" },

@@ -91,8 +91,9 @@ test.describe("键盘与线程", () => {
 
   test("线程切换与状态徽章", async ({ page }) => {
     await page.goto("/");
+    await page.waitForSelector("#window.app-on");
     // 初始一个线程；新开第二个
-    await page.locator(".btn-new-chat").click();
+    await page.keyboard.press("Meta+n");
     await expect(page.locator(".thread-item")).toHaveCount(2);
     await page.locator(".thread-item").nth(0).click();
     await expect(page.locator(".thread-item").nth(0)).toHaveClass(/on/);

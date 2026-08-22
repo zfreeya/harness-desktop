@@ -14,6 +14,12 @@ DeepSeek Harness 桌面端 - 对话式 Agent 工作台（Tauri 2 + React + TypeS
 - 工具执行失败有错误态行 + 错误 toast；内置浏览器预览面板（右侧滑出）、⌘K 命令面板、真实窗口控制、任务清单卡与工具执行行渲染
 - **Agent 回复 Markdown 渲染**：标题/列表/加粗/代码块/表格（GFM），原始 HTML 安全转义（防 XSS），链接在 Tauri 内用系统浏览器打开
 - **工作目录预览（harness.local）**：agent 写出的 .html 网页/游戏自动在右侧预览面板打开并实时渲染，改完即刷新；标签可关闭、地址栏显示 /preview/ 路径
+- **Godot 游戏能力（真实，不伪造）**：Godot 仅作为 Harness 内部的运行/渲染/校验/导出引擎；
+  运行时检测（多路径扫描 + 手动选择 + 版本校验 + 诚实「未安装」状态）；项目创建/导入/解析/校验
+  （真实生成 project.godot / 场景 / GDScript，解析场景节点树）；受控子进程运行/停止/重启（退出码分类、日志捕获）；
+  结构化 Godot 工具（detect/select/create/inspect/run/stop/restart/validate/export/diagnostics…）；独立状态模型
+  （engineStatus/gameStatus/projectStatus）；游戏工作区（游戏/场景/控制台）；任务类型（普通/网页/Godot 游戏/导入）。
+  **限制**：本机未安装 Godot，故「实际渲染/导出」诚实报告「运行时缺失」；下载安装通道留接口，不伪造。
 - **状态一致性与上下文隔离（四源状态模型）**：taskStatus / agentStatus / previewStatus / artifactStatus 独立驱动，
   界面任何区域的状态都来自对应状态源（顶栏任务状态、Agent 状态、成果卡预览状态、生成状态互不矛盾）；
   停止 Agent 不影响预览服务；成果卡按 正常/预览停止/内容过期/生成失败 分别呈现，主操作按状态唯一（确认完成/重新启动预览/重新加载/重试生成）；

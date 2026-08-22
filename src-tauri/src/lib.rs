@@ -30,6 +30,7 @@ fn http_alive(port: u16, path: &str) -> bool {
 fn core_healthy() -> bool { http_alive(8420, "/health") }
 fn proxy_healthy() -> bool { http_alive(8096, "/") }
 fn tools_healthy() -> bool { http_alive(8450, "/health") }
+fn godot_healthy() -> bool { http_alive(8455, "/health") }
 
 /// 容错探测：服务在忙（蒸馏/LLM 任务）时单次探测可能超时，多次重试避免误杀健康服务
 fn probe_healthy(healthy: fn() -> bool, tries: u32) -> bool {
@@ -162,6 +163,7 @@ pub fn run() {
             let core_plist = agents_dir.join("dev.harness.memory-core.plist");
             let proxy_plist = agents_dir.join("dev.harness.memory-proxy.plist");
             let tools_plist = agents_dir.join("dev.harness.tools.plist");
+            let godot_plist = agents_dir.join("dev.harness.godot.plist");
             std::fs::write(
                 &core_plist,
                 plist("dev.harness.memory-core", &node_s, &core_s,
@@ -180,11 +182,18 @@ pub fn run() {
                     &["index.mjs"],
                     &format!("    <key>DSH_TOOLS_WORKSPACE</key><string>{}</string>\n    <key>DSH_TOOLS_PORT</key><string>8450</string>\n", xml_escape(&format!("{}/Harness", home)))),
             ).ok();
+            std::fs::write(
+                &godot_plist,
+                plist("dev.harness.godot", &node_s, &tools_s,
+                    &["godot-server.mjs"],
+                    &format!("    <key>DSH_TOOLS_WORKSPACE</key><string>{}</string>\n    <key>DSH_GODOT_PORT</key><string>8455</string>\n", xml_escape(&format!("{}/Harness", home)))),
+            ).ok();
 
             // 2) 确保 launchd 服务在跑（健康则不动；不健康才修复，见 ensure_launchd_service）
             ensure_launchd_service("dev.harness.memory-core", &core_plist, core_healthy);
             ensure_launchd_service("dev.harness.memory-proxy", &proxy_plist, proxy_healthy);
             ensure_launchd_service("dev.harness.tools", &tools_plist, tools_healthy);
+            ensure_launchd_service("dev.harness.godot", &godot_plist, godot_healthy);
 
             // 3) 等健康；launchd 修复失败/不可用时回退到进程内自举（孤儿进程常驻）
             if !wait_until(core_healthy, 25) {
@@ -201,6 +210,12 @@ pub fn run() {
             }
             let tools_workspace = format!("{}/Harness", home);
             let tools_workspace_s = tools_workspace.as_str();
+            if !wait_until(godot_healthy, 15) {
+                spawn_service(&node_s, &tools_s,
+                    &["godot-server.mjs"],
+                    &[("DSH_TOOLS_WORKSPACE", tools_workspace_s), ("DSH_GODOT_PORT", "8455")]);
+                wait_until(godot_healthy, 15);
+            }
             if !wait_until(tools_healthy, 15) {
                 spawn_service(&node_s, &tools_s,
                     &["index.mjs"],

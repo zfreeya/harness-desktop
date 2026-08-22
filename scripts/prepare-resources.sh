@@ -22,6 +22,7 @@ echo "== 复制工具服务 =="
 mkdir -p src-tauri/resources/tools-server
 rm -rf src-tauri/resources/tools-server/*
 cp tools-server/index.mjs src-tauri/resources/tools-server/
+cp tools-server/godot-server.mjs src-tauri/resources/tools-server/
 
 echo "== 完成 =="
 du -sh src-tauri/resources/

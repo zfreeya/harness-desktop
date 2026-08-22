@@ -58,6 +58,19 @@ function buildTools() {
     { type: "function", function: { name: "grep", description: "在文件内容中按正则搜索，返回匹配行（含文件与行号）。", parameters: { type: "object", properties: { pattern: str("正则表达式"), path: str("搜索目录，默认工作目录根"), include: str("文件名过滤 glob，如 *.ts") }, required: ["pattern"] } } },
     { type: "function", function: { name: "fetch", description: "抓取一个 http/https 网页并返回文本内容（截断到 300KB）。", parameters: { type: "object", properties: { url: str("完整 URL，如 https://example.com") }, required: ["url"] } } },
     { type: "function", function: { name: "todo_write", description: "维护当前任务的待办清单。每次调用传完整清单整体替换。", parameters: { type: "object", properties: { todos: { type: "array", description: "完整待办列表", items: { type: "object", properties: { content: str("事项描述"), status: { type: "string", enum: ["pending", "in_progress", "completed"], description: "状态" } }, required: ["content", "status"] } } }, required: ["todos"] } } },
+    { type: "function", function: { name: "detect_godot_runtime", description: "检测系统中已安装的 Godot 运行时。", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "select_godot_runtime", description: "手动选择 Godot 可执行文件路径并校验版本。", parameters: { type: "object", properties: { path: str("Godot 可执行文件的绝对路径") }, required: ["path"] } } },
+    { type: "function", function: { name: "create_godot_project", description: "创建 Godot 2D 项目（生成真实 project.godot/场景/GDScript）。", parameters: { type: "object", properties: { name: str("项目名称") }, required: ["name"] } } },
+    { type: "function", function: { name: "inspect_godot_project", description: "读取当前 Godot 项目：名称、主场景、场景/脚本/资源清单。", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "list_godot_scenes", description: "列出场景与主场景节点树。", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "validate_godot_project", description: "校验项目（project.godot/主场景/运行时）。", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "run_godot_project", description: "运行 Godot 项目（受控子进程；无运行时则返回真实缺失错误）。", parameters: { type: "object", properties: { scene: str("可选：要运行的场景") } } } },
+    { type: "function", function: { name: "run_godot_scene", description: "运行指定场景。", parameters: { type: "object", properties: { scene: str("场景路径") }, required: ["scene"] } } },
+    { type: "function", function: { name: "stop_godot_game", description: "停止正在运行的 Godot 游戏进程。", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "restart_godot_game", description: "重新运行 Godot 游戏。", parameters: { type: "object", properties: { scene: str("可选：场景") } } } },
+    { type: "function", function: { name: "collect_godot_diagnostics", description: "收集 Godot 项目与运行诊断（日志/运行时/项目状态）。", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "export_godot_web", description: "导出 Web 版本（需要 Godot 运行时与 Web 导出模板）。", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "capture_game_preview", description: "获取游戏预览截图或预览地址。", parameters: { type: "object", properties: {} } } },
   ];
 }
 
@@ -67,6 +80,7 @@ const LS_CURRENT = "harness.current.v1";
 const LS_MODEL = "harness.model.v1";
 const LS_WS_PREVIEWS = "harness.wsPreviews.v1";
 const LS_EXEC_MODE = "harness.execMode.v1";
+const LS_GODOT = "harness.godot.config";
 const LS_REDUCE_MOTION = "harness.reduceMotion.v1";
 const LS_MAX_THREADS = 50;
 const LS_MAX_MSGS_PER_THREAD = 300;
@@ -83,6 +97,7 @@ function normalizeThread(t: Partial<Thread>): Thread {
     ...base, ...t,
     id: typeof t.id === "string" ? t.id : base.id,
     title: typeof t.title === "string" && t.title ? t.title : "新任务",
+    kind: t.kind === "godot" || t.kind === "import_godot" || t.kind === "web" ? t.kind : "general",
     status: normalizeTaskStatus(t.status),
     agent: normalizeAgentStatus(t.agent),
     thinking: false,
@@ -180,6 +195,11 @@ export function useHarness() {
   };
   const [memCfg, setMemCfgState] = useState<MemoryConfig>(loadMemoryConfig);
   const [toolsCfg, setToolsCfgState] = useState<ToolsConfig>(loadToolsConfig);
+  const [godotCfg, setGodotCfgState] = useState<{ url: string }>(() => {
+    try { const r = localStorage.getItem(LS_GODOT); if (r) return { url: JSON.parse(r).url || "http://127.0.0.1:8455" }; } catch { /* ignore */ }
+    return { url: "http://127.0.0.1:8455" };
+  });
+  const setGodotCfg = (c: { url: string }) => { try { localStorage.setItem(LS_GODOT, JSON.stringify(c)); } catch { /* ignore */ } setGodotCfgState(c); };
   const [mode, setModeState] = useState<ExecMode>(() => {
     try {
       const m = localStorage.getItem(LS_EXEC_MODE);
@@ -315,6 +335,26 @@ export function useHarness() {
   };
   /** 执行一个工具调用；返回文本与是否失败（网络失败或服务返回业务错误） */
   const execTool = async (name: string, args: Record<string, unknown>, threadId: string): Promise<{ text: string; failed: boolean }> => {
+    const godotNames = ["detect_godot_runtime","select_godot_runtime","create_godot_project","inspect_godot_project","list_godot_scenes","inspect_godot_scene","validate_godot_project","import_godot_assets","run_godot_project","run_godot_scene","stop_godot_game","restart_godot_game","export_godot_web","export_godot_build","collect_godot_diagnostics","open_godot_artifact","capture_game_preview"];
+    if (godotNames.includes(name)) {
+      const ep = name.replace(/^godot_/, "");
+      const epMap: Record<string, string> = { detect_runtime: "/detect", select_runtime: "/select", create_project: "/create", inspect_project: "/inspect", list_scenes: "/scenes", inspect_scene: "/scenes", validate_project: "/validate", import_assets: "/import", run_project: "/run", run_scene: "/run", stop_game: "/stop", restart_game: "/restart", export_web: "/export-web", export_build: "/export-web", collect_diagnostics: "/diagnostics", open_artifact: "/status", capture_preview: "/capture" };
+      const p = epMap[ep] ?? ("/" + ep.replace(/_/g, "-"));
+      try {
+        const res = await fetch(godotCfg.url + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...args, projectId: String(args.projectId || threadId), taskId: threadId }), signal: AbortSignal.timeout(60000) });
+        const data = await res.json();
+        const text = JSON.stringify(data);
+        const failed = Boolean(data && (data.ok === false || "error" in data || data.found === false));
+        toolEvents.current.push({ name, args, result: text, status: failed ? "error" : "done" });
+        (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
+        return { text, failed };
+      } catch (e) {
+        const text = JSON.stringify({ ok: false, code: "service_unavailable", error: "Godot 服务不可达：" + String(e) });
+        toolEvents.current.push({ name, args, result: text, status: "error" });
+        (window as unknown as Record<string, unknown>).__toolEvents = toolEvents.current.slice();
+        return { text, failed: true };
+      }
+    }
     if (name === "todo_write") {
       const todos = Array.isArray(args.todos) ? (args.todos as Todo[]) : [];
       patchThread(threadId, (t) => { t.todos = todos.slice(0, 12); });
@@ -595,8 +635,9 @@ export function useHarness() {
     if (t && !t.msgs.some((m) => m.kind === "recall") && t.msgs.length <= 1) setPreviewOpen(false);
   };
 
-  const newChat = () => {
+  const newChat = (kind?: "general" | "web" | "godot" | "import_godot") => {
     const t = firstThread();
+    if (kind) t.kind = kind;
     setThreads((ts) => [t, ...ts]);
     setCurrentState(t.id);
     setPreviewOpen(false);
@@ -630,6 +671,7 @@ export function useHarness() {
     model, setModel,
     memCfg, setMemCfg,
     toolsCfg, setToolsCfg,
+    godotCfg, setGodotCfg,
     wsPreviews, closeWsPreview,
     toasts, push,
     PREVIEW_PAGES,
